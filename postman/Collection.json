@@ -1,0 +1,1079 @@
+{
+	"info": {
+		"_postman_id": "codementorx-api-collection",
+		"name": "CodementorX Authentication API",
+		"description": "Complete API testing collection for JWT Authentication system built with Django REST Framework.\n\n**Features Tested:**\n- User Registration & Login\n- JWT Token Management\n- Profile Management\n- Password Reset Flow\n- Role-based Access Control\n\n**Environment Variables:**\n- `base_url`: API base URL (default: http://127.0.0.1:8000)\n- `access_token`: JWT access token (auto-updated)\n- `refresh_token`: JWT refresh token (auto-updated)\n- `user_id`: Current user ID (auto-updated)\n- `reset_token`: Password reset token (auto-updated)\n- `reset_uid`: Password reset UID (auto-updated)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "🟢 Health & Setup",
+			"item": [
+				{
+					"name": "Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response has correct structure', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData.status).to.eql('healthy');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/auth/health/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "health", ""]
+						},
+						"description": "Check if the API is running and healthy"
+					}
+				},
+				{
+					"name": "API Root",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response contains endpoints info', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('endpoints');",
+									"    pm.expect(jsonData.endpoints).to.have.property('auth');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/",
+							"host": ["{{base_url}}"],
+							"path": ["api", ""]
+						},
+						"description": "Get API root information and available endpoints"
+					}
+				}
+			],
+			"description": "Basic health checks and API information"
+		},
+		{
+			"name": "🔐 Authentication Flow",
+			"item": [
+				{
+					"name": "User Registration",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Response has tokens and user info', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('tokens');",
+									"    pm.expect(jsonData).to.have.property('user');",
+									"    pm.expect(jsonData.tokens).to.have.property('access');",
+									"    pm.expect(jsonData.tokens).to.have.property('refresh');",
+									"});",
+									"",
+									"// Store tokens for later use",
+									"const responseJson = pm.response.json();",
+									"pm.environment.set('access_token', responseJson.tokens.access);",
+									"pm.environment.set('refresh_token', responseJson.tokens.refresh);",
+									"pm.environment.set('user_id', responseJson.user.id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@example.com\",\n    \"username\": \"testuser\",\n    \"first_name\": \"Test\",\n    \"last_name\": \"User\",\n    \"phone\": \"+1234567890\",\n    \"password\": \"SecurePassword123!\",\n    \"password_confirm\": \"SecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/register/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "register", ""]
+						},
+						"description": "Register a new user account"
+					}
+				},
+				{
+					"name": "User Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Login successful with tokens', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData.message).to.eql('Login successful');",
+									"    pm.expect(jsonData).to.have.property('tokens');",
+									"});",
+									"",
+									"// Update tokens",
+									"const responseJson = pm.response.json();",
+									"pm.environment.set('access_token', responseJson.tokens.access);",
+									"pm.environment.set('refresh_token', responseJson.tokens.refresh);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@example.com\",\n    \"password\": \"SecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login", ""]
+						},
+						"description": "Login with existing user credentials"
+					}
+				},
+				{
+					"name": "Token Refresh",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('New access token received', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('access');",
+									"});",
+									"",
+									"// Update access token",
+									"const responseJson = pm.response.json();",
+									"pm.environment.set('access_token', responseJson.access);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/refresh/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "refresh", ""]
+						},
+						"description": "Refresh JWT access token using refresh token"
+					}
+				}
+			],
+			"description": "Complete authentication flow: register, login, token refresh"
+		},
+		{
+			"name": "👤 Profile Management",
+			"item": [
+				{
+					"name": "Get Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Profile data is complete', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('email');",
+									"    pm.expect(jsonData).to.have.property('first_name');",
+									"    pm.expect(jsonData).to.have.property('last_name');",
+									"    pm.expect(jsonData).to.have.property('role');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/auth/profile/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "profile", ""]
+						},
+						"description": "Get current user's profile information"
+					}
+				},
+				{
+					"name": "Update Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Profile updated successfully', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData.bio).to.include('Updated bio');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"bio\": \"Updated bio from Postman test\",\n    \"phone\": \"+1987654321\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/profile/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "profile", ""]
+						},
+						"description": "Update user profile information"
+					}
+				},
+				{
+					"name": "Change Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Password changed successfully', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData.message).to.eql('Password changed successfully');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"old_password\": \"SecurePassword123!\",\n    \"new_password\": \"NewSecurePassword123!\",\n    \"new_password_confirm\": \"NewSecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/change-password/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "change-password", ""]
+						},
+						"description": "Change user password"
+					}
+				}
+			],
+			"description": "Profile management operations"
+		},
+		{
+			"name": "🔑 Password Reset Flow",
+			"item": [
+				{
+					"name": "Forgot Password Request",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Reset email sent message', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData.message).to.include('password reset link');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/forgot-password/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "forgot-password", ""]
+						},
+						"description": "Request password reset email"
+					}
+				},
+				{
+					"name": "Reset Password (Mock)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Note: This is a mock test as we can't easily get real reset tokens in Postman",
+									"// In real testing, you would extract the token from the email",
+									"pm.test('Status code indicates token validation', function () {",
+									"    // This will likely return 400 for invalid token, which is expected",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"uid\": \"mock-uid\",\n    \"token\": \"mock-token\",\n    \"new_password\": \"ResetPassword123!\",\n    \"new_password_confirm\": \"ResetPassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/reset-password/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "reset-password", ""]
+						},
+						"description": "Reset password using token from email (mock test)"
+					}
+				}
+			],
+			"description": "Password reset workflow"
+		},
+		{
+			"name": "🚫 Error Scenarios",
+			"item": [
+				{
+					"name": "Invalid Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Error message for invalid credentials', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('non_field_errors');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@example.com\",\n    \"password\": \"WrongPassword\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login", ""]
+						},
+						"description": "Test login with invalid credentials"
+					}
+				},
+				{
+					"name": "Duplicate Email Registration",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test('Duplicate email error', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('email');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"testuser@example.com\",\n    \"username\": \"testuser2\",\n    \"first_name\": \"Test\",\n    \"last_name\": \"User\",\n    \"password\": \"SecurePassword123!\",\n    \"password_confirm\": \"SecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/register/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "register", ""]
+						},
+						"description": "Test registration with duplicate email"
+					}
+				},
+				{
+					"name": "Unauthorized Profile Access",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 401', function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"",
+									"pm.test('Authentication required error', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('detail');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/auth/profile/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "profile", ""]
+						},
+						"description": "Test profile access without authentication"
+					}
+				}
+			],
+			"description": "Test error handling and validation"
+		},
+
+
+
+		{
+			"name": "⚙️ User Preferences",
+			"item": [
+				{
+					"name": "Get User Preferences",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"// Save preference ID if response is array",
+									"const responseJson = pm.response.json();",
+									"if (Array.isArray(responseJson) && responseJson.length > 0) {",
+									"    pm.environment.set('preference_id', responseJson[0].id);",
+									"} else if (responseJson.id) {",
+									"    pm.environment.set('preference_id', responseJson.id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/preferences/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "preferences", ""]
+						},
+						"description": "Get user preferences (auto-created on user registration)"
+					}
+				},
+				{
+  "name": "Update User Preferences",
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "pm.test('Status code is 200', function () {",
+          "    pm.response.to.have.status(200);",
+          "});",
+          "",
+          "pm.test('Preferences updated successfully', function () {",
+          "    const jsonData = pm.response.json();",
+          "    pm.expect(jsonData.theme).to.eql('dark');",
+          "    pm.expect(jsonData.max_chats).to.eql(15);",
+          "});"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "request": {
+    "method": "PATCH",
+    "header": [
+      {
+        "key": "Authorization",
+        "value": "Bearer {{access_token}}"
+      },
+      {
+        "key": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "body": {
+      "mode": "raw",
+      "raw": "{\n  \"max_chats\": 15,\n  \"theme\": \"dark\",\n  \"language\": \"en\"\n}"
+    },
+    "url": {
+      "raw": "{{base_url}}/api/chat-models/preferences/{{preference_id}}/",
+      "host": ["{{base_url}}"],
+      "path": [
+        "api",
+        "chat-models",
+        "preferences",
+        "{{preference_id}}"
+      ]
+    }
+  }
+}
+
+			]
+		},
+		{
+			"name": "💬 Chat Conversations",
+			"item": [
+				{
+					"name": "List Conversations",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Response is array', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models","conversations", ""]
+						}
+					}
+				},
+				{
+					"name": "Create Conversation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Conversation created successfully', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('title');",
+									"    pm.expect(jsonData.title).to.eql('My Test Conversation');",
+									"});",
+									"",
+									"// Save conversation ID for message testing",
+									"const responseJson = pm.response.json();",
+									"pm.environment.set('conversation_id', responseJson.id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"My Test Conversation\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/",
+							"host": ["{{base_url}}"],
+							"path": ["api","chat-models", "conversations", ""]
+						}
+					}
+				},
+				{
+					"name": "Get Conversation Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "{{conversation_id}}", ""]
+						}
+					}
+				},
+				{
+					"name": "Update Conversation Title",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Updated Conversation Title\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/",
+							"host": ["{{base_url}}"],
+							"path": ["api","chat-models", "conversations", "{{conversation_id}}", ""]
+						}
+					}
+				},
+				{
+					"name": "Get Recent Conversations",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/recent/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "recent", ""]
+						}
+					}
+				},
+				{
+					"name": "Soft Delete Conversation",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/soft_delete/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "{{conversation_id}}", "soft_delete", ""]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📝 Chat Messages",
+			"item": [
+				{
+					"name": "List Messages in Conversation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Messages array returned', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/messages/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "{{conversation_id}}", "messages", ""]
+						}
+					}
+				},
+				{
+					"name": "Add User Message (General)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test('Message created successfully', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData.role).to.eql('user');",
+									"    pm.expect(jsonData.intent).to.eql('general');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Hello! I need help with understanding Django models.\",\n    \"role\": \"user\",\n    \"intent\": \"general\",\n    \"metadata\": {\n        \"timestamp\": \"2025-01-20T10:30:00Z\",\n        \"client_version\": \"1.0.0\",\n        \"user_agent\": \"PostmanRuntime/7.32.0\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/messages/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "{{conversation_id}}", "messages", ""]
+						}
+					}
+				},
+				{
+					"name": "Add Assistant Response",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"I'd be happy to help you understand Django models! Django models are Python classes that represent database tables. They define the structure and behavior of your data. Each model class inherits from django.db.models.Model and each attribute represents a database field. Would you like me to explain any specific aspect of models?\",\n    \"role\": \"assistant\",\n    \"intent\": \"general\",\n    \"metadata\": {\n        \"model\": \"claude-3-sonnet\",\n        \"response_time_ms\": 1250,\n        \"tokens_used\": 95,\n        \"confidence_score\": 0.95\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/messages/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "{{conversation_id}}", "messages", ""]
+						}
+					}
+				},
+				{
+					"name": "Add Coding Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Can you show me how to create a Django model for a blog post with title, content, author, and publication date?\",\n    \"role\": \"user\",\n    \"intent\": \"coding\",\n    \"metadata\": {\n        \"language\": \"python\",\n        \"framework\": \"django\",\n        \"complexity\": \"beginner\",\n        \"topic\": \"models\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/messages/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models", "conversations", "{{conversation_id}}", "messages", ""]
+						}
+					}
+				},
+				{
+					"name": "Add Translation Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Please translate 'Hello, how are you doing today?' to Spanish\",\n    \"role\": \"user\",\n    \"intent\": \"translation\",\n    \"metadata\": {\n        \"source_language\": \"en\",\n        \"target_language\": \"es\",\n        \"translation_type\": \"casual\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/chat-models/conversations/{{conversation_id}}/messages/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat-models","conversations", "{{conversation_id}}", "messages", ""]
+						}
+					}
+				}
+			]
+		},
+
+
+
+
+		{
+			"name": "🔓 Logout",
+			"item": [
+				{
+					"name": "User Logout",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status code is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test('Logout successful', function () {",
+									"    const jsonData = pm.response.json();",
+									"    pm.expect(jsonData.message).to.eql('Logout successful');",
+									"});",
+									"",
+									"// Clear tokens after logout",
+									"pm.environment.set('access_token', '');",
+									"pm.environment.set('refresh_token', '');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/logout/",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "logout", ""]
+						},
+						"description": "Logout and blacklist refresh token"
+					}
+				}
+			],
+			"description": "Logout functionality"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global pre-request script",
+					"// This runs before every request in the collection"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test script",
+					"// This runs after every request in the collection",
+					"",
+					"pm.test('Response time is less than 2000ms', function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(2000);",
+					"});",
+					"",
+					"pm.test('Response is JSON', function () {",
+					"    pm.response.to.have.header('Content-Type');",
+					"    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+					"});"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://127.0.0.1:8000",
+			"type": "string"
+		}
+	]
+}

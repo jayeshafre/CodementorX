@@ -1,0 +1,92 @@
+{
+	"id": "codementorx-auth-environment",
+	"name": "CodementorX Auth - Local Development",
+	"values": [
+		{
+			"key": "base_url",
+			"value": "http://127.0.0.1:8000",
+			"type": "default",
+			"enabled": true,
+			"description": "Base URL for the JWT Auth API"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "JWT Access Token (auto-updated by tests)"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "JWT Refresh Token (auto-updated by tests)"
+		},
+		{
+			"key": "user_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Current user ID (auto-updated by tests)"
+		},
+		{
+			"key": "test_email",
+			"value": "testuser@example.com",
+			"type": "default",
+			"enabled": true,
+			"description": "Test user email for login/registration"
+		},
+		{
+			"key": "test_password",
+			"value": "SecurePassword123!",
+			"type": "secret",
+			"enabled": true,
+			"description": "Test user password"
+		},
+		{
+			"key": "reset_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "Password reset token from email"
+		},
+		{
+			"key": "reset_uid",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Password reset UID from email"
+		},
+
+		{
+			"key": "conversation_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Active conversation ID (auto-updated)"
+		},
+		{
+			"key": "preference_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "User preference ID (auto-updated)"
+		},
+			{
+			"key": "message_counter",
+			"value": "1",
+			"type": "default",
+			"enabled": true,
+			"description": "Counter for bulk message testing"
+		},
+		{
+			"key": "unique_title",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Dynamic conversation title"
+		}
+	],
+	"_postman_variable_scope": "environment"
+}
