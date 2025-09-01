@@ -1,0 +1,161 @@
+{
+	"id": "codementorx-chatbot-environment",
+	"name": "CodementorX - Local Development",
+	"values": [
+		{
+			"key": "chatbot_base_url",
+			"value": "http://127.0.0.1:8001",
+			"type": "default",
+			"enabled": true,
+			"description": "Base URL for FastAPI Chatbot Service"
+		},
+		{
+			"key": "auth_base_url",
+			"value": "http://127.0.0.1:8000",
+			"type": "default",
+			"enabled": true,
+			"description": "Base URL for Django Authentication Service"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "JWT Access Token (auto-updated by auth tests)"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "JWT Refresh Token (auto-updated by auth tests)"
+		},
+		{
+			"key": "user_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Current user ID (auto-updated by auth tests)"
+		},
+		{
+			"key": "session_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Current chat session ID (auto-managed)"
+		},
+		{
+			"key": "new_session_id",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Newly created session ID for testing"
+		},
+		{
+			"key": "test_email",
+			"value": "testuser@example.com",
+			"type": "default",
+			"enabled": true,
+			"description": "Test user email for authentication"
+		},
+		{
+			"key": "test_password",
+			"value": "SecurePassword123!",
+			"type": "secret",
+			"enabled": true,
+			"description": "Test user password"
+		},
+		{
+			"key": "deepseek_api_key",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "DeepSeek API key for coding assistance"
+		},
+		{
+			"key": "openai_api_key",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "OpenAI API key for general queries (backup)"
+		},
+		{
+			"key": "translation_api_key",
+			"value": "",
+			"type": "secret",
+			"enabled": true,
+			"description": "Translation service API key"
+		},
+		{
+			"key": "chat_history_limit",
+			"value": "10",
+			"type": "default",
+			"enabled": true,
+			"description": "Maximum number of chats to retrieve from history"
+		},
+		{
+			"key": "test_coding_query",
+			"value": "Write a Python function to reverse a string",
+			"type": "default",
+			"enabled": true,
+			"description": "Sample coding query for testing"
+		},
+		{
+			"key": "test_general_query",
+			"value": "What is machine learning?",
+			"type": "default",
+			"enabled": true,
+			"description": "Sample general knowledge query"
+		},
+		{
+			"key": "test_translation_query",
+			"value": "Translate 'Hello World' to Spanish",
+			"type": "default",
+			"enabled": true,
+			"description": "Sample translation query"
+		},
+		{
+			"key": "concurrent_test_results",
+			"value": "",
+			"type": "default",
+			"enabled": true,
+			"description": "Results from concurrent user testing (auto-managed)"
+		},
+		{
+			"key": "performance_threshold_coding",
+			"value": "5000",
+			"type": "default",
+			"enabled": true,
+			"description": "Max acceptable response time for coding queries (ms)"
+		},
+		{
+			"key": "performance_threshold_general",
+			"value": "3000",
+			"type": "default",
+			"enabled": true,
+			"description": "Max acceptable response time for general queries (ms)"
+		},
+		{
+			"key": "performance_threshold_translation",
+			"value": "2000",
+			"type": "default",
+			"enabled": true,
+			"description": "Max acceptable response time for translation queries (ms)"
+		},
+		{
+			"key": "rate_limit_per_minute",
+			"value": "10",
+			"type": "default",
+			"enabled": true,
+			"description": "Expected rate limit threshold per minute"
+		},
+		{
+			"key": "max_message_length",
+			"value": "4000",
+			"type": "default",
+			"enabled": true,
+			"description": "Maximum allowed message length in characters"
+		}
+	],
+	"_postman_variable_scope": "environment"
+}
