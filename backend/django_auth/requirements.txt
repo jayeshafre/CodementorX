@@ -20,6 +20,7 @@ django-extensions==3.2.3
 # API Documentation
 drf-spectacular==0.26.5
 
+
 # Development tools
 black==23.9.1
 flake8==6.1.0
@@ -32,3 +33,5 @@ setuptools
 Pillow
 dj-database-url
 django-redis>=5.4.0
+drf-spectacular[sidecar]
+djoser

@@ -12,7 +12,8 @@ import warnings
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Security Settings
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-me-in-production')
+SECRET_KEY = config('SECRET_KEY')  # used by Django
+JWT_SECRET_KEY = config('JWT_SECRET_KEY', default=SECRET_KEY) 
 DEBUG = config('DEBUG', default=True, cast=bool)
 
 # Allow localhost for development, configure for production
@@ -34,6 +35,8 @@ THIRD_PARTY_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_spectacular',
+    'drf_spectacular_sidecar',
+    'djoser',
 ]
 
 LOCAL_APPS = [
@@ -146,13 +149,14 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
+    'SIGNING_KEY': JWT_SECRET_KEY,  # ✅ Use JWT_SECRET_KEY instead of SECRET_KEY
     'VERIFYING_KEY': None,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
+    'JTI_CLAIM': 'jti',  # ✅ Add JTI claim for token blacklisting
 }
 
 # CORS Configuration
@@ -194,10 +198,12 @@ CACHES = {
     }
 }
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",   # Frontend (Vite)
-    "http://localhost:8001",   # FastAPI service
-    "http://127.0.0.1:8001",
+    "http://localhost:5173",   # Vite dev server
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",   # Alternative frontend port
     "http://127.0.0.1:3000",
+    "http://localhost:8001",   # FastAPI chatbot service
+    "http://127.0.0.1:8001",
 ]
 
 
@@ -206,6 +212,30 @@ CORS_ALLOWED_ORIGINS = [
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
 
+
+
+# Additional CORS headers for better compatibility
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# CORS methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
 
 warnings.filterwarnings(
     "ignore",

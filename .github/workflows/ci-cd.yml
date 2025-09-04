@@ -1,0 +1,141 @@
+name: CodementorX CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  # Test environment variables
+  SECRET_KEY: test-secret-key-for-github-actions
+  JWT_SECRET_KEY: test-jwt-secret-key
+  DATABASE_URL: sqlite:///test_db.sqlite3
+  REDIS_URL: redis://localhost:6379/0
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    # Test Django Auth Service
+    - name: Install Django dependencies
+      run: |
+        cd backend/django_auth
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run Django tests
+      run: |
+        cd backend/django_auth
+        python manage.py test
+        python manage.py check --deploy
+    
+    # Test FastAPI Chatbot Service
+    - name: Install FastAPI dependencies
+      run: |
+        cd backend/chatbot
+        pip install -r requirements.txt
+    
+    - name: Run FastAPI tests
+      run: |
+        cd backend/chatbot
+        pytest tests/ -v --cov=. --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/chatbot/coverage.xml
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run tests
+      run: |
+        cd frontend
+        npm test
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    # Python security scan
+    - name: Run Python security scan
+      run: |
+        cd backend
+        pip install safety bandit
+        find . -name requirements.txt -exec safety check -r {} \;
+        bandit -r . -f json -o bandit-report.json || true
+    
+    # Node.js security scan
+    - name: Run Node.js security scan
+      run: |
+        cd frontend
+        npm audit --audit-level=moderate
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        # Add your deployment scripts here
+        # Example: Deploy to Render, Railway, or AWS
+    
+    - name: Notify deployment status
+      run: |
+        echo "✅ Deployment completed successfully!"
+        # Add Slack/Discord notification here if needed

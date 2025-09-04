@@ -1,1076 +1,152 @@
 {
-	"info": {
-		"_postman_id": "codementorx-chatbot-api",
-		"name": "CodementorX Chatbot API",
-		"description": "Complete API testing collection for CodementorX Chatbot built with FastAPI.\n\n**Features Tested:**\n- Chat Operations (Coding, General, Translation)\n- JWT Authentication Integration\n- Chat History Management\n- Session Management\n- Error Handling & Rate Limiting\n- Performance Testing\n\n**Environment Variables:**\n- `chatbot_base_url`: FastAPI chatbot URL (default: http://127.0.0.1:8001)\n- `auth_base_url`: Django auth URL (default: http://127.0.0.1:8000)\n- `access_token`: JWT access token (auto-updated)\n- `session_id`: Current chat session ID (auto-managed)\n- `deepseek_api_key`: External API key for coding assistance",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"item": [
-		{
-			"name": "🟢 Health & Setup",
-			"item": [
-				{
-					"name": "Chatbot Health Check",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('FastAPI service is healthy', function () {",
-									"    pm.response.to.have.status(200);",
-									"});",
-									"",
-									"pm.test('Health check response structure', function () {",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('status', 'healthy');",
-									"    pm.expect(jsonData).to.have.property('service', 'CodementorX Chatbot');",
-									"    pm.expect(jsonData).to.have.property('version');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{chatbot_base_url}}/health",
-							"host": ["{{chatbot_base_url}}"],
-							"path": [ "health"]
-						},
-						"description": "Check if FastAPI chatbot service is running"
-					}
-				},
-				{
-					"name": "Service Status",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Service status is operational', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('chatbot_service');",
-									"    pm.expect(jsonData).to.have.property('external_apis');",
-									"});",
-									"",
-									"pm.test('External API connections are verified', function () {",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData.external_apis).to.have.property('coding_api');",
-									"    pm.expect(jsonData.external_apis).to.have.property('translation_api');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/status",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "status"]
-						},
-						"description": "Check external API integrations and service status"
-					}
-				}
-			],
-			"description": "Health checks and service verification"
-		},
-		{
-			"name": "🔐 Authentication Integration",
-			"item": [
-				{
-					"name": "Get JWT Token",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('JWT token obtained successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('tokens');",
-									"    pm.expect(jsonData.tokens).to.have.property('access');",
-									"});",
-									"",
-									"// Store token for chatbot API calls",
-									"const responseJson = pm.response.json();",
-									"pm.environment.set('access_token', responseJson.tokens.access);",
-									"pm.environment.set('user_id', responseJson.user.id);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\"\n}"
-						},
-						"url": {
-							"raw": "{{auth_base_url}}/api/auth/login/",
-							"host": ["{{auth_base_url}}"],
-							"path": ["api", "auth", "login", ""]
-						},
-						"description": "Get JWT token from Django auth service"
-					}
-				},
-				{
-					"name": "Verify JWT with Chatbot Service",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('JWT token is verified by FastAPI', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('authenticated', true);",
-									"    pm.expect(jsonData).to.have.property('user_id');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							}
-						],
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/auth/verify",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "auth", "verify"]
-						},
-						"description": "Verify JWT token with chatbot service"
-					}
-				}
-			],
-			"description": "JWT authentication integration between Django and FastAPI"
-		},
-		{
-			"name": "💬 Chat Operations",
-			"item": [
-				{
-					"name": "Send Coding Query",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Coding query processed successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('response');",
-									"    pm.expect(jsonData).to.have.property('chat_type', 'coding');",
-									"});",
-									"",
-									"pm.test('Response contains code formatting', function () {",
-									"    const jsonData = pm.response.json();",
-									"    // Check for code blocks or structured response",
-									"    pm.expect(jsonData.response.length).to.be.above(50);",
-									"});",
-									"",
-									"// Store session for follow-up tests",
-									"const responseJson = pm.response.json();",
-									"if (responseJson.session_id) {",
-									"    pm.environment.set('session_id', responseJson.session_id);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Write a Python function to reverse a string\",\n    \"chat_type\": \"coding\",\n    \"context\": {\n        \"language\": \"python\",\n        \"difficulty\": \"beginner\"\n    }\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Send a coding-related query to the chatbot"
-					}
-				},
-				{
-					"name": "Send General Query",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('General query processed successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('response');",
-									"    pm.expect(jsonData).to.have.property('chat_type', 'general');",
-									"});",
-									"",
-									"pm.test('Response time is acceptable for general queries', function () {",
-									"    pm.expect(pm.response.responseTime).to.be.below(3000);",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"What is machine learning?\",\n    \"chat_type\": \"general\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Send a general knowledge query"
-					}
-				},
-				{
-					"name": "Send Translation Query",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Translation query processed successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('response');",
-									"    pm.expect(jsonData).to.have.property('chat_type', 'translation');",
-									"});",
-									"",
-									"pm.test('Translation response format', function () {",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData.response).to.include('Hola Mundo');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Translate 'Hello World' to Spanish\",\n    \"chat_type\": \"translation\",\n    \"context\": {\n        \"source_language\": \"english\",\n        \"target_language\": \"spanish\"\n    }\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Send a translation request"
-					}
-				},
-				{
-					"name": "Context-Aware Follow-up",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Follow-up query processed with context', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('response');",
-									"    pm.expect(jsonData).to.have.property('context_used', true);",
-									"});",
-									"",
-									"pm.test('Session ID maintained', function () {",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData.session_id).to.equal(pm.environment.get('session_id'));",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Can you optimize this code for better performance?\",\n    \"chat_type\": \"coding\",\n    \"session_id\": \"{{session_id}}\",\n    \"context\": {\n        \"use_previous_context\": true\n    }\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Send follow-up query that uses previous conversation context"
-					}
-				}
-			],
-			"description": "Core chat functionality testing"
-		},
-		{
-			"name": "📚 History Management",
-			"item": [
-				{
-					"name": "Get Chat History",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Chat history retrieved successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('chats');",
-									"    pm.expect(jsonData.chats).to.be.an('array');",
-									"});",
-									"",
-									"pm.test('History limit respected (max 10)', function () {",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData.chats.length).to.be.at.most(10);",
-									"});",
-									"",
-									"pm.test('Chat entries have required fields', function () {",
-									"    const jsonData = pm.response.json();",
-									"    if (jsonData.chats.length > 0) {",
-									"        const chat = jsonData.chats[0];",
-									"        pm.expect(chat).to.have.property('message');",
-									"        pm.expect(chat).to.have.property('response');",
-									"        pm.expect(chat).to.have.property('timestamp');",
-									"        pm.expect(chat).to.have.property('chat_type');",
-									"    }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							}
-						],
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/history?limit={{chat_history_limit}}",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "history"],
-							"query": [
-								{
-									"key": "limit",
-									"value": "{{chat_history_limit}}"
-								}
-							]
-						},
-						"description": "Retrieve user's chat history"
-					}
-				},
-				{
-					"name": "Get User Sessions",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Sessions retrieved successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('sessions');",
-									"    pm.expect(jsonData.sessions).to.be.an('array');",
-									"});",
-									"",
-									"pm.test('Session entries have metadata', function () {",
-									"    const jsonData = pm.response.json();",
-									"    if (jsonData.sessions.length > 0) {",
-									"        const session = jsonData.sessions[0];",
-									"        pm.expect(session).to.have.property('session_id');",
-									"        pm.expect(session).to.have.property('created_at');",
-									"        pm.expect(session).to.have.property('message_count');",
-									"    }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							}
-						],
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/sessions",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "sessions"]
-						},
-						"description": "Get all chat sessions for the user"
-					}
-				},
-				{
-					"name": "Create New Session",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('New session created successfully', function () {",
-									"    pm.response.to.have.status(201);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('session_id');",
-									"    pm.expect(jsonData).to.have.property('message', 'New session created');",
-									"});",
-									"",
-									"// Store new session ID",
-									"const responseJson = pm.response.json();",
-									"pm.environment.set('new_session_id', responseJson.session_id);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"session_name\": \"Test Session\",\n    \"initial_context\": {\n        \"purpose\": \"API Testing\"\n    }\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/session/new",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "session", "new"]
-						},
-						"description": "Create a new chat session"
-					}
-				},
-				{
-					"name": "Clear Chat History",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Chat history cleared successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('message', 'Chat history cleared');",
-									"    pm.expect(jsonData).to.have.property('cleared_count');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "DELETE",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							}
-						],
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/clear",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "clear"]
-						},
-						"description": "Clear user's chat history"
-					}
-				}
-			],
-			"description": "Chat history and session management"
-		},
-		{
-			"name": "🚫 Error Scenarios",
-			"item": [
-				{
-					"name": "Invalid JWT Token",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Invalid token is rejected', function () {",
-									"    pm.response.to.have.status(401);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('detail');",
-									"    pm.expect(jsonData.detail).to.include('Invalid');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer invalid_token_here"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Test message\",\n    \"chat_type\": \"general\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test invalid JWT token handling"
-					}
-				},
-				{
-					"name": "Missing Required Fields",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Missing fields validation', function () {",
-									"    pm.response.to.have.status(422);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('detail');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"chat_type\": \"general\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test request with missing required fields"
-					}
-				},
-				{
-					"name": "Rate Limiting Test",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									"// Send multiple rapid requests to trigger rate limiting",
-									"const requests = [];",
-									"for (let i = 0; i < 15; i++) {",
-									"    setTimeout(() => {",
-									"        pm.sendRequest({",
-									"            url: pm.environment.get('chatbot_base_url') + '/api/chat/send',",
-									"            method: 'POST',",
-									"            header: {",
-									"                'Authorization': 'Bearer ' + pm.environment.get('access_token'),",
-									"                'Content-Type': 'application/json'",
-									"            },",
-									"            body: {",
-									"                mode: 'raw',",
-									"                raw: JSON.stringify({",
-									"                    message: 'Rate limit test ' + i,",
-									"                    chat_type: 'general'",
-									"                })",
-									"            }",
-									"        }, function(err, response) {",
-									"            console.log('Request', i, 'Status:', response.code);",
-									"        });",
-									"    }, i * 100);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						},
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Rate limiting is enforced', function () {",
-									"    // This request should either succeed (200) or be rate limited (429)",
-									"    pm.expect(pm.response.code).to.be.oneOf([200, 429]);",
-									"    ",
-									"    if (pm.response.code === 429) {",
-									"        const jsonData = pm.response.json();",
-									"        pm.expect(jsonData).to.have.property('detail');",
-									"        pm.expect(jsonData.detail).to.include('rate limit');",
-									"    }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Final rate limit test\",\n    \"chat_type\": \"general\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test rate limiting functionality"
-					}
-				},
-				{
-					"name": "External API Failure Handling",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Graceful fallback when external API fails', function () {",
-									"    // Should either succeed with external API or provide fallback",
-									"    pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
-									"    ",
-									"    const jsonData = pm.response.json();",
-									"    if (pm.response.code === 503) {",
-									"        pm.expect(jsonData).to.have.property('error');",
-									"        pm.expect(jsonData).to.have.property('fallback_response');",
-									"    } else {",
-									"        pm.expect(jsonData).to.have.property('response');",
-									"    }",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "X-Force-API-Failure",
-								"value": "true",
-								"description": "Custom header to simulate API failure"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Write a complex algorithm\",\n    \"chat_type\": \"coding\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test fallback when external APIs are unavailable"
-					}
-				}
-			],
-			"description": "Error handling and edge case testing"
-		},
-		{
-			"name": "🔄 Performance Tests",
-			"item": [
-				{
-					"name": "Response Time - Coding Query",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Coding query response time acceptable', function () {",
-									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
-									"});",
-									"",
-									"pm.test('Response quality maintained under time constraint', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData.response.length).to.be.above(100);",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Create a REST API with authentication using FastAPI and PostgreSQL\",\n    \"chat_type\": \"coding\",\n    \"context\": {\n        \"language\": \"python\",\n        \"framework\": \"fastapi\",\n        \"complexity\": \"advanced\"\n    }\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test response time for complex coding queries"
-					}
-				},
-				{
-					"name": "Concurrent User Simulation",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									"// Simulate concurrent users",
-									"const concurrentRequests = 5;",
-									"const responses = [];",
-									"",
-									"for (let i = 0; i < concurrentRequests; i++) {",
-									"    pm.sendRequest({",
-									"        url: pm.environment.get('chatbot_base_url') + '/api/chat/send',",
-									"        method: 'POST',",
-									"        header: {",
-									"            'Authorization': 'Bearer ' + pm.environment.get('access_token'),",
-									"            'Content-Type': 'application/json'",
-									"        },",
-									"        body: {",
-									"            mode: 'raw',",
-									"            raw: JSON.stringify({",
-									"                message: 'Concurrent test user ' + i,",
-									"                chat_type: 'general'",
-									"            })",
-									"        }",
-									"    }, function(err, response) {",
-									"        responses.push({",
-									"            status: response.code,",
-									"            time: response.responseTime,",
-									"            user: i",
-									"        });",
-									"        ",
-									"        if (responses.length === concurrentRequests) {",
-									"            pm.environment.set('concurrent_test_results', JSON.stringify(responses));",
-									"        }",
-									"    });",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						},
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Primary request succeeds during concurrent load', function () {",
-									"    pm.response.to.have.status(200);",
-									"});",
-									"",
-									"pm.test('Response time acceptable under load', function () {",
-									"    pm.expect(pm.response.responseTime).to.be.below(10000);",
-									"});",
-									"",
-									"// Analyze concurrent test results",
-									"setTimeout(() => {",
-									"    const results = pm.environment.get('concurrent_test_results');",
-									"    if (results) {",
-									"        const parsedResults = JSON.parse(results);",
-									"        console.log('Concurrent test results:', parsedResults);",
-									"        ",
-									"        pm.test('Most concurrent requests succeeded', function () {",
-									"            const successCount = parsedResults.filter(r => r.status === 200).length;",
-									"            pm.expect(successCount).to.be.at.least(3);",
-									"        });",
-									"    }",
-									"}, 2000);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Primary concurrent test request\",\n    \"chat_type\": \"general\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test system behavior under concurrent load"
-					}
-				},
-				{
-					"name": "Memory Usage Test",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Large context handling', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('response');",
-									"});",
-									"",
-									"pm.test('Response time reasonable for large input', function () {",
-									"    pm.expect(pm.response.responseTime).to.be.below(8000);",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"message\": \"Please review and optimize this code: \\n\\n```python\\ndef complex_algorithm(data):\\n    result = []\\n    for i in range(len(data)):\\n        for j in range(len(data)):\\n            if i != j:\\n                temp = []\\n                for k in range(len(data[i])):\\n                    temp.append(data[i][k] * data[j][k])\\n                result.append(temp)\\n    return result\\n\\ndef process_large_dataset(dataset):\\n    processed = []\\n    for item in dataset:\\n        if isinstance(item, list):\\n            sub_result = []\\n            for sub_item in item:\\n                sub_result.append(complex_algorithm(sub_item))\\n            processed.append(sub_result)\\n        else:\\n            processed.append(complex_algorithm(item))\\n    return processed\\n```\\n\\nThis code processes large datasets but seems inefficient. Can you optimize it?\",\n    \"chat_type\": \"coding\",\n    \"context\": {\n        \"language\": \"python\",\n        \"focus\": \"performance_optimization\",\n        \"dataset_size\": \"large\"\n    }\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/send",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "send"]
-						},
-						"description": "Test handling of large input context"
-					}
-				}
-			],
-			"description": "Performance and load testing"
-		},
-		{
-			"name": "🔍 Feedback & Analytics",
-			"item": [
-				{
-					"name": "Submit Response Feedback",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test('Feedback submitted successfully', function () {",
-									"    pm.response.to.have.status(200);",
-									"    const jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('message', 'Feedback recorded');",
-									"    pm.expect(jsonData).to.have.property('feedback_id');",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Authorization",
-								"value": "Bearer {{access_token}}"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"session_id\": \"{{session_id}}\",\n    \"message_id\": \"last\",\n    \"rating\": 5,\n    \"feedback\": \"Excellent coding solution with clear explanations\",\n    \"feedback_type\": \"positive\"\n}"
-						},
-						"url": {
-							"raw": "{{chatbot_base_url}}/api/chat/feedback",
-							"host": ["{{chatbot_base_url}}"],
-							"path": ["api", "chat", "feedback"]
-						},
-						"description": "Submit user feedback on chatbot response"
-					}
-				}
-			],
-			"description": "User feedback and analytics"
-		}
-	],
-	"event": [
-		{
-			"listen": "prerequest",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					"// Global pre-request setup",
-					"if (!pm.environment.get('session_id')) {",
-					"    pm.environment.set('session_id', 'test_session_' + Date.now());",
-					"}",
-					"",
-					"// Set default values if not present",
-					"if (!pm.environment.get('chat_history_limit')) {",
-					"    pm.environment.set('chat_history_limit', '10');",
-					"}",
-					"",
-					"if (!pm.environment.get('test_email')) {",
-					"    pm.environment.set('test_email', 'testuser@example.com');",
-					"}",
-					"",
-					"if (!pm.environment.get('test_password')) {",
-					"    pm.environment.set('test_password', 'SecurePassword123!');",
-					"}"
-				]
-			}
-		},
-		{
-			"listen": "test",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					"// Global test validations",
-					"pm.test('Response time is reasonable', function () {",
-					"    pm.expect(pm.response.responseTime).to.be.below(15000);",
-					"});",
-					"",
-					"pm.test('Response has JSON content type', function () {",
-					"    if (pm.response.code !== 404) {",
-					"        pm.response.to.have.header('Content-Type');",
-					"        const contentType = pm.response.headers.get('Content-Type');",
-					"        pm.expect(contentType).to.include('application/json');",
-					"    }",
-					"});",
-					"",
-					"// Log important information",
-					"if (pm.response.code >= 400) {",
-					"    console.log('Error Response:', pm.response.text());",
-					"}"
-				]
-			}
-		}
-	],
-	"variable": [
-		{
-			"key": "chatbot_base_url",
-			"value": "http://127.0.0.1:8001",
-			"type": "string"
-		},
-		{
-			"key": "auth_base_url",
-			"value": "http://127.0.0.1:8000",
-			"type": "string"
-		}
-	]
+  "info": {
+    "name": "🤖 CodementorX - FastAPI Chatbot Service",
+    "_postman_id": "codementorx-fastapi-collection",
+    "description": "Collection for testing FastAPI chatbot (port 8001) with Django Auth (port 8000)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"{{test_email}}\",\n    \"password\": \"{{test_password}}\"\n}"
+        },
+        "url": {
+          "raw":  "{\n    \"email\": \"testuser1@example.com\",\n    \"password\": \"SecurePassword123!\"\n}",
+          "host": ["{{auth_base_url}}"],
+          "path": ["api", "auth", "login", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Login - Status code is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const jsonData = pm.response.json();",
+              "pm.environment.set('access_token', jsonData.access);",
+              "pm.environment.set('refresh_token', jsonData.refresh);",
+              "pm.environment.set('user_id', jsonData.user.id);",
+              "console.log('🔑 Access token updated:', jsonData.access);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat - General Question",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"content\": \"Hello! What is CodementorX?\",\n    \"metadata\": { \"timestamp\": \"{{$isoTimestamp}}\", \"source\": \"postman_test\" }\n}"
+        },
+        "url": {
+          "raw": "{{chat_base_url}}/api/chat/",
+          "host": ["{{chat_base_url}}"],
+          "path": ["api", "chat", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Chat General - Status 200', () => pm.response.to.have.status(200));",
+              "const res = pm.response.json();",
+              "pm.environment.set('conversation_id', res.conversation_id);",
+              "pm.expect(res).to.have.property('reply');",
+              "console.log('💬 Conversation started:', res.conversation_id);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat - Coding Question (FastAPI + JWT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{access_token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"content\": \"How do I implement JWT authentication in FastAPI?\",\n    \"conversation_id\": {{conversation_id}},\n    \"intent\": \"coding\",\n    \"metadata\": { \"language\": \"python\", \"framework\": \"fastapi\", \"timestamp\": \"{{$isoTimestamp}}\" }\n}"
+        },
+        "url": {
+          "raw": "{{chat_base_url}}/api/chat/",
+          "host": ["{{chat_base_url}}"],
+          "path": ["api", "chat", ""]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Chat Coding - Status 200', () => pm.response.to.have.status(200));",
+              "const res = pm.response.json();",
+              "pm.expect(res.intent).to.eql('coding');",
+              "pm.expect(res.reply).to.include('FastAPI');",
+              "pm.expect(res.reply).to.include('JWT');",
+              "console.log('💻 Coding response OK');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{chat_base_url}}/api/health",
+          "host": ["{{chat_base_url}}"],
+          "path": ["api", "health"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Health Check - Status 200', () => pm.response.to.have.status(200));",
+              "const res = pm.response.json();",
+              "pm.expect(res.status).to.eql('healthy');",
+              "console.log('🩺 Health check passed');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat Service Status",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{chat_base_url}}/api/chat/status",
+          "host": ["{{chat_base_url}}"],
+          "path": ["api", "chat", "status"]
+        }
+      }
+    }
+  ]
 }
