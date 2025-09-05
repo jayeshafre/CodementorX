@@ -250,7 +250,7 @@ textarea::placeholder {
   color: rgba(107, 114, 128, 0.7);
 }
 
-/* Code elements */
+/* Code elements - FIXED: Removed rainbow line */
 code {
   font-family: 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
   font-size: 0.9em;
@@ -272,17 +272,7 @@ pre {
   position: relative;
 }
 
-pre::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 30px;
-  background: linear-gradient(to right, #ff5f57, #ffbd2e, #28ca42);
-  border-radius: 12px 12px 0 0;
-  opacity: 0.8;
-}
+/* REMOVED: The problematic pre::before rule that created the rainbow line */
 
 pre code {
   background: none;

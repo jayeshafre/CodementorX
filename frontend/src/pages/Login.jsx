@@ -22,7 +22,7 @@ const Login = () => {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      const from = location.state?.from?.pathname || '/profile';
+      const from = location.state?.from?.pathname || '/chat';
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, navigate, location]);
@@ -83,7 +83,7 @@ const Login = () => {
     });
 
     if (result.success) {
-      const from = location.state?.from?.pathname || '/profile';
+      const from = location.state?.from?.pathname || '/chat';
       navigate(from, { replace: true });
     }
   };

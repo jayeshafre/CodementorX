@@ -63,17 +63,7 @@ const Navbar = () => {
             {isAuthenticated ? (
               <>
                 {/* Navigation links for authenticated users */}
-                <Link
-                  to="/dashboard"
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    isActivePath('/dashboard')
-                      ? 'text-blue-700 bg-blue-50 shadow-sm'
-                      : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
-                  }`}
-                >
-                  <Home className="w-4 h-4" />
-                  <span>Dashboard</span>
-                </Link>
+                
 
                 <Link
                   to="/chat"
@@ -266,18 +256,7 @@ const Navbar = () => {
                   </div>
 
                   {/* Mobile menu items */}
-                  <Link
-                    to="/dashboard"
-                    onClick={() => setIsOpen(false)}
-                    className={`flex items-center space-x-3 px-3 py-3 rounded-lg text-base font-medium transition-colors ${
-                      isActivePath('/dashboard')
-                        ? 'text-blue-700 bg-blue-50'
-                        : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
-                    }`}
-                  >
-                    <Home className="w-5 h-5" />
-                    <span>Dashboard</span>
-                  </Link>
+                 
 
                   <Link
                     to="/chat"

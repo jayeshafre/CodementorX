@@ -67,14 +67,15 @@ const CodeBlock = ({ code, language, blockId }) => {
   const highlightedCode = applySyntaxHighlighting(code, language);
 
   return (
-    <div className="my-4 group">
+    <div className="my-4 group" style={{ border: 'none', outline: 'none', background: 'none' }}>
       <div className="flex items-center justify-between bg-gray-800 text-white px-4 py-2 rounded-t-lg">
         <div className="flex items-center space-x-2">
+          <Code className="w-4 h-4" />
           <span className="text-sm font-medium capitalize">{language}</span>
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center space-x-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors opacity-0 group-hover:opacity-100"
+          className="flex items-center space-x-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors opacity-0 group-hover:opacity-100 border-none outline-none"
           title={isCopied ? 'Copied!' : 'Copy code'}
         >
           {isCopied ? (
@@ -90,7 +91,7 @@ const CodeBlock = ({ code, language, blockId }) => {
           )}
         </button>
       </div>
-      <pre className="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm font-mono leading-relaxed">
+      <pre className="bg-gray-900 text-gray-100 p-4 rounded-b-lg overflow-x-auto text-sm font-mono leading-relaxed" style={{ border: 'none', outline: 'none', boxShadow: 'none', background: '#111827' }}>
         <code dangerouslySetInnerHTML={{ __html: highlightedCode }} />
       </pre>
     </div>

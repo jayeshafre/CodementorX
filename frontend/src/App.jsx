@@ -15,10 +15,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 
 import ChatInterface from './chatbot/ChatInterface';
-import ChatBox from './chatbot/ChatBox';
-import Sidebar from './chatbot/Sidebar';
 import { ChatProvider } from './context/ChatContext';
-import ErrorBoundary from './components/ErrorBoundary';
 
 // Import styles
 import './styles/tailwind.css';
@@ -27,68 +24,66 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <ErrorBoundary>
-          <div className="min-h-screen bg-gray-50">
-            <Navbar />
-            <main>
-              <Routes>
-                {/* Public Routes */}
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
+        <div className="min-h-screen bg-gray-50">
+          <Navbar />
+          <main>
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
 
-                {/* Chat with Provider & Protection */}
-                <Route
-                  path="/chat"
-                  element={
-                    <ProtectedRoute>
-                      <ChatProvider>
-                        <ChatInterface />
-                      </ChatProvider>
-                    </ProtectedRoute>
-                  }
-                />
+              {/* Chat with Provider & Protection */}
+              <Route
+                path="/chat"
+                element={
+                  <ProtectedRoute>
+                    <ChatProvider>
+                      <ChatInterface />
+                    </ChatProvider>
+                  </ProtectedRoute>
+                }
+              />
 
-                {/* Protected Routes */}
-                <Route
-                  path="/profile"
-                  element={
-                    <ProtectedRoute>
-                      <Profile />
-                    </ProtectedRoute>
-                  }
-                />
+              {/* Protected Routes */}
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
+              />
 
-                {/* Admin Only */}
-                <Route
-                  path="/admin"
-                  element={
-                    <ProtectedRoute requireAdmin={true}>
-                      <AdminDashboard />
-                    </ProtectedRoute>
-                  }
-                />
+              {/* Admin Only */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute requireAdmin={true}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
 
-                {/* Verified Users Only */}
-                <Route
-                  path="/settings"
-                  element={
-                    <ProtectedRoute requireVerified={true}>
-                      <Settings />
-                    </ProtectedRoute>
-                  }
-                />
+              {/* Verified Users Only */}
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute requireVerified={true}>
+                    <Settings />
+                  </ProtectedRoute>
+                }
+              />
 
-                {/* Default redirect */}
-                <Route path="/" element={<Navigate to="/chat" replace />} />
+              {/* Default redirect */}
+              <Route path="/" element={<Navigate to="/chat" replace />} />
 
-                {/* 404 Not Found */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </main>
-          </div>
-        </ErrorBoundary>
+              {/* 404 Not Found */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
+        </div>
       </Router>
     </AuthProvider>
   );
@@ -136,7 +131,7 @@ const NotFound = () => (
           Go Back
         </button>
         <button
-          onClick={() => window.location.href = '/'}
+          onClick={() => (window.location.href = '/')}
           className="btn-primary"
         >
           Go Home
