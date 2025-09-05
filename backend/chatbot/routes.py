@@ -1,270 +1,332 @@
 """
-FastAPI routes for chat endpoints
+FastAPI Routes for Chatbot Service - localStorage Version
+API endpoints for chat functionality (stateless backend)
 """
+from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import List, Optional
+import logging
 
-import asyncio
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
-from fastapi.security import HTTPBearer
-from typing import Optional
-import structlog
-
-# FIXED: Use relative imports
-from .models import (
+from models import (
     ChatRequest, 
     ChatResponse, 
-    HealthResponse, 
-    ErrorResponse,
-    ChatIntent
+    ConversationHistory, 
+    ConversationSummary,
+    UserInfo,
+    ErrorResponse
 )
-from .utils import verify_jwt_token, rate_limit_check, get_redis_client
-from .services import chat_service
+from services import ai_service
+from utils import verify_jwt_token, log_request, validate_conversation_id
 
-logger = structlog.get_logger(__name__)
-router = APIRouter()
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Create router
+chat_router = APIRouter(prefix="/chat", tags=["Chat"])
+
+# Security scheme
 security = HTTPBearer()
 
-# FIXED: Better JWT token extraction and validation
-async def get_current_user(authorization: str = Header(None)):
+# Dependency for JWT authentication
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> UserInfo:
     """
     Dependency to verify JWT token and extract user info
-    Enhanced with better error handling and validation
     """
-    if not authorization:
-        logger.warning("Authorization header missing")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header missing",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    # Extract token from "Bearer <token>" format
     try:
-        parts = authorization.split()
-        if len(parts) != 2:
-            raise ValueError("Invalid format")
-        
-        scheme, token = parts
-        if scheme.lower() != "bearer":
-            logger.warning("Invalid authorization scheme", scheme=scheme)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization scheme. Expected 'Bearer'",
-                headers={"WWW-Authenticate": "Bearer"}
-            )
-    except ValueError:
-        logger.warning("Invalid authorization header format", header=authorization)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format. Expected 'Bearer <token>'",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    # Verify token using Django's JWT secret
-    try:
+        token = credentials.credentials
         user_info = verify_jwt_token(token)
-        logger.debug("JWT token verified successfully", user_id=user_info['user_id'])
         return user_info
-    except HTTPException:
-        # Re-raise HTTP exceptions from verify_jwt_token
-        raise
     except Exception as e:
-        logger.error("Unexpected error during token verification", error=str(e))
+        logger.error(f"JWT verification failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token verification failed",
-            headers={"WWW-Authenticate": "Bearer"}
+            detail=f"Invalid or expired token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-@router.post("/chat/", response_model=ChatResponse)
-async def chat_endpoint(
+
+@chat_router.post(
+    "/message",
+    response_model=ChatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Send Chat Message",
+    description="Send a message to the AI chatbot and get a response (stateless)"
+)
+async def send_message(
     request: ChatRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: UserInfo = Depends(get_current_user)
 ):
     """
-    FIXED: Complete chat endpoint with proper response handling
+    Send a message to the AI chatbot - localStorage version (stateless)
+    Frontend manages all conversation persistence
     """
-    user_id = current_user["user_id"]
-
-    logger.info(
-        "Processing chat message",
-        user_id=user_id,
-        content_length=len(request.content),
-        conversation_id=request.conversation_id,
-        intent=request.intent.value if request.intent else None
-    )
-
-    # Rate limiting check
     try:
-        is_allowed = await rate_limit_check(user_id)
-        if not is_allowed:
-            logger.warning("Rate limit exceeded", user_id=user_id)
+        # Log the request
+        log_request("POST", "/chat/message", current_user.user_id)
+        
+        # Validate request
+        if not request.message.strip():
             raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": "Too many requests",
-                    "message": "You have exceeded the rate limit. Please try again later.",
-                    "retry_after": 60
-                }
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message cannot be empty"
             )
+        
+        # Generate AI response (no storage in backend)
+        response = await ai_service.generate_response(request, current_user)
+        
+        logger.info(f"Generated stateless response for user {current_user.user_id}")
+        return response
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning("Rate limit check failed, allowing request", error=str(e))
-        # Continue with request if rate limiting fails
-
-    try:
-        # Process chat message
-        result = await chat_service.process_chat_message(
-            content=request.content,
-            user_id=user_id,
-            conversation_id=request.conversation_id,
-            intent=request.intent
-        )
-
-        logger.info(
-            "Chat message processed successfully",
-            user_id=user_id,
-            conversation_id=result["conversation_id"],
-            message_id=result["message_id"],
-            intent=result["intent"].value,
-            processing_time=result["processing_time"]
-        )
-
-        # FIXED: Return ALL required fields for ChatResponse
-        return ChatResponse(
-            reply=result.get("reply", "No reply generated"),
-            conversation_id=result["conversation_id"],
-            message_id=result["message_id"],
-            intent=result["intent"],
-            processing_time=result["processing_time"],
-            metadata=result.get("metadata", {})
-        )
-
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(
-            "Chat processing failed",
-            user_id=user_id,
-            error=str(e),
-            error_type=type(e).__name__
-        )
+        logger.error(f"Error in send_message: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "Processing failed",
-                "message": "Failed to process your message. Please try again."
-            }
+            detail=f"Failed to generate response: {str(e)}"
         )
 
-@router.get("/health", response_model=HealthResponse)
-async def health_check():
+
+@chat_router.get(
+    "/conversations",
+    response_model=List[ConversationSummary],
+    status_code=status.HTTP_200_OK,
+    summary="Get User Conversations",
+    description="Returns empty list - localStorage version manages conversations on frontend"
+)
+async def get_conversations(
+    current_user: UserInfo = Depends(get_current_user)
+):
     """
-    Health check endpoint - verifies all services are operational
-    Enhanced with comprehensive service checking
+    Returns empty list - localStorage version manages conversations on frontend
+    Kept for API compatibility but not functional
     """
-    services_status = {}
-    
-    # Test Redis connection
     try:
-        redis_client = await get_redis_client()
-        if redis_client:
-            await redis_client.ping()
-            services_status["redis"] = "healthy"
-        else:
-            services_status["redis"] = "unavailable"
-    except Exception as e:
-        logger.warning("Redis health check failed", error=str(e))
-        services_status["redis"] = "unhealthy"
-    
-    # Test AI service availability (basic check)
-    try:
-        # This is a simple check - in production you might ping the actual AI service
-        from decouple import config
-        deepseek_key = config('DEEPSEEK_API_KEY', default='')
-        openai_key = config('OPENAI_API_KEY', default='')
+        log_request("GET", "/chat/conversations", current_user.user_id)
         
-        if deepseek_key or openai_key:
-            services_status["ai_service"] = "healthy"
-        else:
-            services_status["ai_service"] = "configured_fallback"
+        logger.info(f"get_conversations called for user {current_user.user_id} - localStorage version returns empty")
+        return []  # Frontend manages all conversations via localStorage
+        
     except Exception as e:
-        logger.warning("AI service health check failed", error=str(e))
-        services_status["ai_service"] = "unhealthy"
-    
-    # Overall status
-    unhealthy_services = [k for k, v in services_status.items() if v == "unhealthy"]
-    if unhealthy_services:
-        overall_status = "degraded"
-        logger.warning("Health check shows degraded status", unhealthy_services=unhealthy_services)
-    else:
-        overall_status = "healthy"
-    
-    return HealthResponse(
-        status=overall_status,
-        timestamp=datetime.utcnow(),
-        version="1.0.0",
-        services=services_status
-    )
+        logger.error(f"Error getting conversations: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversations: {str(e)}"
+        )
 
-@router.get("/chat/status")
-async def chat_status():
-    """
-    Public chat service status endpoint (no auth required)
-    """
-    return {
-        "status": "online",
-        "service": "CodementorX Chatbot API",
-        "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "uptime": "Service is running",
-        "features": {
-            "jwt_auth": True,
-            "rate_limiting": True,
-            "conversation_history": True,
-            "intent_detection": True
-        }
-    }
 
-# ADDITIONAL: User-specific endpoints
-@router.get("/chat/conversations")
-async def get_user_conversations(
-    current_user: dict = Depends(get_current_user)
+@chat_router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationHistory,
+    status_code=status.HTTP_200_OK,
+    summary="Get Conversation History",
+    description="Not functional in localStorage version - returns 404"
+)
+async def get_conversation(
+    conversation_id: str,
+    current_user: UserInfo = Depends(get_current_user)
 ):
     """
-    Get user's conversation history (placeholder for future implementation)
+    Not functional in localStorage version - frontend manages conversation history
     """
-    user_id = current_user['user_id']
-    
-    logger.info("Fetching user conversations", user_id=user_id)
-    
-    # TODO: Implement actual database query
-    return {
-        "user_id": user_id,
-        "conversations": [],
-        "message": "Conversation history feature coming soon"
-    }
+    try:
+        log_request("GET", f"/chat/conversations/{conversation_id}", current_user.user_id)
+        
+        # Validate conversation ID format
+        if not validate_conversation_id(conversation_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid conversation ID format"
+            )
+        
+        # Always return 404 since we don't store conversations on backend
+        logger.info(f"get_conversation called for {conversation_id} - localStorage version doesn't store conversations")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversations are managed in localStorage on frontend"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting conversation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversation: {str(e)}"
+        )
 
-@router.delete("/chat/conversations/{conversation_id}")
+
+@chat_router.delete(
+    "/conversations/{conversation_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete Conversation",
+    description="Returns success - localStorage version manages deletion on frontend"
+)
 async def delete_conversation(
-    conversation_id: int,
-    current_user: dict = Depends(get_current_user)
+    conversation_id: str,
+    current_user: UserInfo = Depends(get_current_user)
 ):
     """
-    Delete a specific conversation (placeholder for future implementation)
+    Returns success - localStorage version manages deletion on frontend
     """
-    user_id = current_user['user_id']
-    
-    logger.info(
-        "Deleting conversation",
-        user_id=user_id,
-        conversation_id=conversation_id
-    )
-    
-    # TODO: Implement actual database deletion
-    return {
-        "message": f"Conversation {conversation_id} deleted successfully",
-        "user_id": user_id
-    }
+    try:
+        log_request("DELETE", f"/chat/conversations/{conversation_id}", current_user.user_id)
+        
+        # Validate conversation ID format
+        if not validate_conversation_id(conversation_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid conversation ID format"
+            )
+        
+        logger.info(f"delete_conversation called for {conversation_id} - localStorage version always succeeds")
+        
+        return {
+            "message": "Conversation deletion handled by frontend localStorage",
+            "conversation_id": conversation_id,
+            "note": "Backend doesn't store conversations in localStorage version"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete conversation: {str(e)}"
+        )
+
+
+@chat_router.post(
+    "/conversations/{conversation_id}/continue",
+    response_model=ChatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Continue Conversation",
+    description="Continue conversation - context provided by frontend via request"
+)
+async def continue_conversation(
+    conversation_id: str,
+    request: ChatRequest,
+    current_user: UserInfo = Depends(get_current_user)
+):
+    """
+    Continue an existing conversation - localStorage version
+    Frontend provides all conversation context in the request
+    """
+    try:
+        log_request("POST", f"/chat/conversations/{conversation_id}/continue", current_user.user_id)
+        
+        # Validate conversation ID format
+        if not validate_conversation_id(conversation_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid conversation ID format"
+            )
+        
+        # Validate message
+        if not request.message.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message cannot be empty"
+            )
+        
+        # Set conversation ID in request
+        request.conversation_id = conversation_id
+        
+        # Frontend should have provided conversation context in request.context
+        # No need to fetch from backend since we don't store anything
+        
+        # Generate response using provided context
+        response = await ai_service.generate_response(request, current_user)
+        
+        logger.info(f"Continued conversation {conversation_id} for user {current_user.user_id}")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error continuing conversation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to continue conversation: {str(e)}"
+        )
+
+
+@chat_router.get(
+    "/models",
+    status_code=status.HTTP_200_OK,
+    summary="Get Available Models",
+    description="Get list of available AI models"
+)
+async def get_available_models(
+    current_user: UserInfo = Depends(get_current_user)
+):
+    """
+    Get list of available AI models
+    """
+    try:
+        log_request("GET", "/chat/models", current_user.user_id)
+        
+        # Return list of available models
+        models = [
+            {
+                "id": "gpt-3.5-turbo",
+                "name": "GPT-3.5 Turbo",
+                "description": "Fast and efficient model for general conversations",
+                "max_tokens": 4096,
+                "available": True
+            },
+            {
+                "id": "gpt-4o-mini", 
+                "name": "GPT-4o Mini",
+                "description": "Efficient and capable model for coding and technical questions",
+                "max_tokens": 16384,
+                "available": True
+            }
+        ]
+        return {
+            "models": models,
+            "default_model": "gpt-4o-mini"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting models: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get models: {str(e)}"
+        )
+
+
+@chat_router.get(
+    "/stats",
+    status_code=status.HTTP_200_OK,
+    summary="Get User Chat Stats",
+    description="Returns basic stats - localStorage version has limited backend stats"
+)
+async def get_chat_stats(
+    current_user: UserInfo = Depends(get_current_user)
+):
+    """
+    Returns basic stats - localStorage version has limited backend stats
+    """
+    try:
+        log_request("GET", "/chat/stats", current_user.user_id)
+        
+        # Return basic stats since we don't store conversations
+        stats = {
+            "user_id": current_user.user_id,
+            "total_conversations": 0,  # Frontend manages this
+            "total_messages": 0,       # Frontend manages this
+            "recent_conversation": None,
+            "storage_type": "localStorage",
+            "note": "Detailed stats are managed by frontend localStorage"
+        }
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Error getting chat stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get chat stats: {str(e)}"
+        )

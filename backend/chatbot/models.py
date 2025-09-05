@@ -1,107 +1,214 @@
 """
-Pydantic models for request/response validation
+Pydantic Models for FastAPI Chatbot Service
+Request/Response models for chat functionality
 """
-
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
-class ChatRole(str, Enum):
-    """Chat message roles"""
+
+class MessageRole(str, Enum):
+    """Message role types"""
     USER = "user"
     ASSISTANT = "assistant"
+    SYSTEM = "system"
 
-class ChatIntent(str, Enum):
-    """Chat message intents"""
-    GENERAL = "general"
-    CODING = "coding"
-    TRANSLATION = "translation"
 
-class ChatRequest(BaseModel):
-    """Chat request model - FIXED duplicate fields"""
-    model_config = ConfigDict(
-        extra="forbid",  # Prevent extra fields
-        json_schema_extra={
+class ChatMessage(BaseModel):
+    """Individual chat message model"""
+    role: MessageRole = Field(..., description="Message role (user/assistant/system)")
+    content: str = Field(..., min_length=1, max_length=10000, description="Message content")
+    timestamp: Optional[datetime] = Field(default=None, description="Message timestamp")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
+
+    @validator('content')
+    def content_must_not_be_empty(cls, v):
+        if not v or v.strip() == '':
+            raise ValueError('Content cannot be empty')
+        return v.strip()
+
+    class Config:
+        json_schema_extra = {
             "example": {
-                "content": "How do I implement JWT authentication in FastAPI?",
-                "conversation_id": 123,
-                "intent": "coding",
-                "metadata": {"source": "web_app"}
+                "role": "user",
+                "content": "How do I implement authentication in Django?",
+                "timestamp": "2024-09-04T12:00:00Z",
+                "metadata": {}
             }
         }
-    )
-    
-    content: str = Field(
-        ..., 
-        min_length=1, 
-        max_length=4000,
-        description="User's message content"
-    )
-    conversation_id: Optional[int] = Field(
-        None,
-        description="ID of existing conversation (optional for new conversations)"
-    )
-    intent: Optional[ChatIntent] = Field(
-        None,
-        description="Message intent (auto-detected if not provided)"
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Additional metadata for the message"
-    )
+
+
+class ChatRequest(BaseModel):
+    """Chat request model"""
+    message: str = Field(..., min_length=1, max_length=10000, description="User message")
+    conversation_id: Optional[str] = Field(default=None, description="Conversation ID for context")
+    context: Optional[List[ChatMessage]] = Field(default=[], description="Previous conversation context")
+    model: Optional[str] = Field(default="deepseek-chat", description="AI model to use")
+    temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0, description="Response creativity")
+    max_tokens: Optional[int] = Field(default=1000, ge=1, le=4000, description="Maximum response tokens")
+    system_prompt: Optional[str] = Field(default=None, description="Custom system prompt")
+
+    @validator('message')
+    def message_must_not_be_empty(cls, v):
+        if not v or v.strip() == '':
+            raise ValueError('Message cannot be empty')
+        return v.strip()
+
+    @validator('context')
+    def context_not_too_long(cls, v):
+        if len(v) > 50:  # Limit context to last 50 messages
+            return v[-50:]
+        return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "How do I implement JWT authentication in Django?",
+                "conversation_id": "conv_123456",
+                "context": [],
+                "model": "deepseek-chat",
+                "temperature": 0.7,
+                "max_tokens": 1000
+            }
+        }
+
 
 class ChatResponse(BaseModel):
     """Chat response model"""
-    model_config = ConfigDict(
-        json_schema_extra={
+    message: str = Field(..., description="AI response message")
+    conversation_id: str = Field(..., description="Conversation ID")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    model_used: str = Field(..., description="AI model that generated the response")
+    token_usage: Optional[Dict[str, int]] = Field(default=None, description="Token usage statistics")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional response metadata")
+
+    class Config:
+        protected_namespaces = ()
+        json_schema_extra = {
             "example": {
-                "reply": "To implement JWT authentication in FastAPI, you can use python-jose...",
-                "conversation_id": 123,
-                "message_id": 456,
-                "intent": "coding",
-                "processing_time": 1.234,
-                "metadata": {"tokens_used": 150, "model": "deepseek-chat"}
+                "message": "To implement JWT authentication in Django, you can use the djangorestframework-simplejwt package...",
+                "conversation_id": "conv_123456",
+                "timestamp": "2024-09-04T12:00:00Z",
+                "model_used": "deepseek-chat",
+                "token_usage": {
+                    "prompt_tokens": 50,
+                    "completion_tokens": 200,
+                    "total_tokens": 250
+                },
+                "metadata": {}
             }
         }
-    )
-    
-    reply: str = Field(..., description="AI assistant's response")
-    conversation_id: int = Field(..., description="Conversation ID")
-    message_id: int = Field(..., description="Message ID")
-    intent: ChatIntent = Field(..., description="Detected or provided intent")
-    processing_time: float = Field(..., description="Processing time in seconds")
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Response metadata (tokens used, model info, etc.)"
-    )
 
-class HealthResponse(BaseModel):
-    """Health check response model"""
-    status: str = Field(..., description="Service status")
-    timestamp: datetime = Field(..., description="Current timestamp")
-    version: str = Field(..., description="API version")
-    services: Dict[str, str] = Field(..., description="Dependent services status")
+
+class ConversationSummary(BaseModel):
+    """Conversation summary model"""
+    conversation_id: str = Field(..., description="Conversation ID")
+    title: Optional[str] = Field(default=None, description="Conversation title")
+    message_count: int = Field(..., description="Number of messages in conversation")
+    created_at: datetime = Field(..., description="Conversation creation time")
+    updated_at: datetime = Field(..., description="Last update time")
+    preview: Optional[str] = Field(default=None, description="Preview of the conversation")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "conversation_id": "conv_123456",
+                "title": "Django JWT Authentication",
+                "message_count": 8,
+                "created_at": "2024-09-04T10:00:00Z",
+                "updated_at": "2024-09-04T12:00:00Z",
+                "preview": "User asked about JWT authentication in Django..."
+            }
+        }
+
+
+class ConversationHistory(BaseModel):
+    """Full conversation history model"""
+    conversation_id: str = Field(..., description="Conversation ID")
+    messages: List[ChatMessage] = Field(..., description="List of messages in conversation")
+    created_at: datetime = Field(..., description="Conversation creation time")
+    updated_at: datetime = Field(..., description="Last update time")
+    title: Optional[str] = Field(default=None, description="Conversation title")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "conversation_id": "conv_123456",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "How do I implement JWT authentication?",
+                        "timestamp": "2024-09-04T12:00:00Z"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "To implement JWT authentication...",
+                        "timestamp": "2024-09-04T12:00:05Z"
+                    }
+                ],
+                "created_at": "2024-09-04T10:00:00Z",
+                "updated_at": "2024-09-04T12:00:00Z",
+                "title": "JWT Authentication Discussion"
+            }
+        }
+
 
 class ErrorResponse(BaseModel):
     """Error response model"""
     error: str = Field(..., description="Error message")
+    detail: Optional[str] = Field(default=None, description="Detailed error information")
     status_code: int = Field(..., description="HTTP status code")
-    correlation_id: str = Field(..., description="Request correlation ID")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
 
-class ConversationSummary(BaseModel):
-    """Conversation summary model"""
-    conversation_id: int
-    title: str
-    message_count: int
-    last_message: Optional[str]
-    created_at: datetime
-    updated_at: datetime
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "error": "Invalid request",
+                "detail": "Message cannot be empty",
+                "status_code": 400,
+                "timestamp": "2024-09-04T12:00:00Z"
+            }
+        }
 
-class UserStats(BaseModel):
-    """User statistics model"""
-    total_conversations: int
-    total_messages: int
-    favorite_intent: ChatIntent
-    avg_response_time: float
+
+class UserInfo(BaseModel):
+    """User information from JWT token"""
+    user_id: int = Field(..., description="User ID")
+    email: str = Field(..., description="User email")
+    username: Optional[str] = Field(default=None, description="Username")
+    full_name: Optional[str] = Field(default=None, description="Full name")
+    role: Optional[str] = Field(default="user", description="User role")
+    is_verified: Optional[bool] = Field(default=False, description="Account verification status")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": 123,
+                "email": "user@example.com",
+                "username": "johndoe",
+                "full_name": "John Doe",
+                "role": "user",
+                "is_verified": True
+            }
+        }
+
+
+# Health check model
+class HealthCheck(BaseModel):
+    """Health check response model"""
+    status: str = Field(default="healthy", description="Service status")
+    service: str = Field(default="CodementorX Chatbot API", description="Service name")
+    version: str = Field(default="1.0.0", description="Service version")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Health check timestamp")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "healthy",
+                "service": "CodementorX Chatbot API",
+                "version": "1.0.0",
+                "timestamp": "2024-09-04T12:00:00Z"
+            }
+        }

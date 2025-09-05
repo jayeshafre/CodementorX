@@ -1,271 +1,134 @@
 """
-FastAPI Chatbot Microservice for CodementorX
-Production-ready with JWT integration, Redis caching, and structured logging
+FastAPI Chatbot Service
+Main application entry point with JWT integration
 """
-
-import asyncio
-import time
-import uuid
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import uvicorn
+import os
+from dotenv import load_dotenv
+import logging
 from fastapi.responses import JSONResponse
-import structlog
-from decouple import config
+from fastapi import HTTPException
 
-# Import our modules
-from .routes import router as chat_router
-from .utils import (
-    setup_logging,
-    get_redis_client,
-    close_redis_connection,
-    correlation_id_var,
+from routes import chat_router
+from utils import verify_jwt_token
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
-# -------------------------
-# Logging
-# -------------------------
-setup_logging()
-logger = structlog.get_logger(__name__)
-
-
-# -------------------------
-# Lifespan events
-# -------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan management"""
-    logger.info("Starting CodementorX Chatbot API...")
-
-    # Initialize Redis connection with retry
-    max_retries = 3
-    retry_count = 0
-    while retry_count < max_retries:
-        try:
-            redis_client = await get_redis_client()
-            await redis_client.ping()  # test connection
-            app.state.redis = redis_client
-            logger.info("Redis connection established successfully")
-            break
-        except Exception as e:
-            retry_count += 1
-            logger.warning(
-                "Failed to connect to Redis",
-                error=str(e),
-                retry=retry_count,
-                max_retries=max_retries,
-            )
-            if retry_count >= max_retries:
-                logger.error("Max Redis connection retries exceeded")
-                app.state.redis = None
-            else:
-                await asyncio.sleep(2**retry_count)  # exponential backoff
-
-    yield
-
-    logger.info("Shutting down CodementorX Chatbot API...")
-    try:
-        await close_redis_connection()
-        logger.info("Redis connection closed successfully")
-    except Exception as e:
-        logger.error("Error closing Redis connection", error=str(e))
-
-
-# -------------------------
-# FastAPI app
-# -------------------------
+# Create FastAPI app
 app = FastAPI(
     title="CodementorX Chatbot API",
-    description="AI-powered coding mentor and Q&A chatbot service",
+    description="AI-powered chatbot service with JWT authentication",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
+    redoc_url="/redoc"
 )
+app.include_router(chat_router)
 
-# -------------------------
-# Security middleware
-# -------------------------
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "0.0.0.0", "*"],
-)
+# Security scheme
+security = HTTPBearer()
 
-# -------------------------
-# CORS middleware (FIXED)
-# -------------------------
-CORS_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="").split(",")
-
-if CORS_ORIGINS == [""] or not any(CORS_ORIGINS):
-    # default allowed origins if env is empty
-    CORS_ORIGINS = [
-        "http://localhost:5173",  # Vite dev server
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",  # React dev
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",  # Django API
-        "http://127.0.0.1:8000",
-    ]
+# CORS configuration
+CORS_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",  # Django API
-        "http://127.0.0.1:8000",
-        
-    ],
+    allow_origins=[origin.strip() for origin in CORS_ORIGINS],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-
-
-# -------------------------
-# Request logging middleware
-# -------------------------
-@app.middleware("http")
-async def logging_middleware(request: Request, call_next):
-    """Add correlation ID and log all requests"""
-    correlation_id = str(uuid.uuid4())
-    correlation_id_var.set(correlation_id)
-    request.state.correlation_id = correlation_id
-
-    start_time = time.time()
-    logger.info(
-        "Request started",
-        method=request.method,
-        url=str(request.url),
-        path=request.url.path,
-        query_params=str(request.query_params),
-        client_ip=request.client.host if request.client else "unknown",
-        correlation_id=correlation_id,
-    )
-
+# Dependency for JWT authentication
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Dependency to verify JWT token and extract user info
+    """
     try:
-        response = await call_next(request)
-        process_time = time.time() - start_time
-        logger.info(
-            "Request completed",
-            method=request.method,
-            url=str(request.url),
-            path=request.url.path,
-            status_code=response.status_code,
-            process_time=round(process_time, 3),
-            correlation_id=correlation_id,
-        )
-        response.headers["X-Correlation-ID"] = correlation_id
-        response.headers["X-Process-Time"] = str(round(process_time, 3))
-        return response
+        token = credentials.credentials
+        user_info = verify_jwt_token(token)
+        return user_info
     except Exception as e:
-        process_time = time.time() - start_time
-        logger.error(
-            "Request failed",
-            method=request.method,
-            url=str(request.url),
-            path=request.url.path,
-            error=str(e),
-            error_type=type(e).__name__,
-            process_time=round(process_time, 3),
-            correlation_id=correlation_id,
+        logger.error(f"JWT verification failed: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
         )
-        raise
 
-
-# -------------------------
-# Exception handlers
-# -------------------------
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
-    logger.warning(
-        "HTTP exception occurred",
-        path=request.url.path,
-        method=request.method,
-        status_code=exc.status_code,
-        detail=exc.detail,
-        correlation_id=correlation_id,
-    )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail,
-            "status_code": exc.status_code,
-            "correlation_id": correlation_id,
-            "timestamp": time.time(),
-        },
-        headers={"X-Correlation-ID": correlation_id},
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    correlation_id = getattr(request.state, "correlation_id", "unknown")
-    logger.error(
-        "Unexpected error occurred",
-        path=request.url.path,
-        method=request.method,
-        error=str(exc),
-        error_type=type(exc).__name__,
-        correlation_id=correlation_id,
-    )
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal server error",
-            "status_code": 500,
-            "correlation_id": correlation_id,
-            "timestamp": time.time(),
-        },
-        headers={"X-Correlation-ID": correlation_id},
-    )
-
-
-# -------------------------
-# Routers
-# -------------------------
-app.include_router(chat_router, prefix="/api", tags=["chat"])
-
-
-# -------------------------
-# Root endpoint
-# -------------------------
-@app.get("/")
-async def root():
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
     return {
+        "status": "healthy",
         "service": "CodementorX Chatbot API",
-        "version": "1.0.0",
-        "status": "online",
-        "timestamp": time.time(),
-        "environment": "development"
-        if config("DEBUG", default=True, cast=bool)
-        else "production",
-        "endpoints": {
-            "chat": "/api/chat/",
-            "health": "/api/health",
-            "status": "/api/chat/status",
-            "docs": "/docs",
-            "redoc": "/redoc",
-        },
+        "version": "1.0.0"
     }
 
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint with API information"""
+    return {
+        "message": "CodementorX Chatbot API",
+        "version": "1.0.0",
+        "docs_url": "/docs",
+        "health_url": "/health",
+        "chat_endpoints": "/api/chat/"
+    }
 
-# -------------------------
-# Development server
-# -------------------------
+# Include chat routes
+app.include_router(
+    chat_router,
+    prefix="/api",
+    dependencies=[Depends(get_current_user)]
+)
+
+# Exception handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    logger.error(f"HTTP Exception: {exc.detail}")
+    return {
+        "error": exc.detail,
+        "status_code": exc.status_code
+    }
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    logger.error(f"Unhandled exception: {exc}")
+    return {
+        "error": "Internal server error",
+        "status_code": 500
+    }
+
 if __name__ == "__main__":
-    import uvicorn
-
+    port = int(os.getenv("FASTAPI_PORT", 8001))
+    host = os.getenv("FASTAPI_HOST", "0.0.0.0")
+    
+    logger.info(f"Starting FastAPI server on {host}:{port}")
+    
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8001,
-        reload=True,
-        log_config=None,
-        access_log=False,
+        host=host,
+        port=port,
+        reload=True if os.getenv("DEBUG", "False").lower() == "true" else False,
+        log_level="info"
     )
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": str(exc.detail)},
+    )
+

@@ -1,461 +1,607 @@
 /**
- * ChatContext.jsx - Global Chat State Management
- * Manages conversation history, real-time messaging, and chat sessions
- * Integrates with FastAPI chatbot service and Redis caching
+ * Chat Context for Global Chat State Management - localStorage Version
+ * Manages conversations, messages, and chat functionality with localStorage persistence
  */
 import { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
-import { chatbotAPI, CHAT_INTENTS, ChatbotError, getRateLimitInfo } from '../api/ChatbotClient';
+import { chatbotAPI, MessageHelpers } from '../api/ChatbotClient';
 import { useAuth } from './AuthContext';
 
 // Create Chat Context
 const ChatContext = createContext();
 
-// Chat Actions
-const CHAT_ACTIONS = {
-  // Message actions
-  SEND_MESSAGE_START: 'SEND_MESSAGE_START',
-  SEND_MESSAGE_SUCCESS: 'SEND_MESSAGE_SUCCESS',
-  SEND_MESSAGE_FAILURE: 'SEND_MESSAGE_FAILURE',
-  
-  // Conversation actions
-  SET_ACTIVE_CONVERSATION: 'SET_ACTIVE_CONVERSATION',
-  LOAD_CONVERSATIONS: 'LOAD_CONVERSATIONS',
-  CREATE_CONVERSATION: 'CREATE_CONVERSATION',
-  DELETE_CONVERSATION: 'DELETE_CONVERSATION',
-  
-  // UI actions
-  SET_INPUT_VALUE: 'SET_INPUT_VALUE',
-  SET_TYPING_INDICATOR: 'SET_TYPING_INDICATOR',
-  CLEAR_ERRORS: 'CLEAR_ERRORS',
-  
-  // Service actions
-  SET_SERVICE_STATUS: 'SET_SERVICE_STATUS',
-  UPDATE_RATE_LIMIT: 'UPDATE_RATE_LIMIT',
-};
-
-// Message types
-export const MESSAGE_TYPES = {
-  USER: 'user',
-  ASSISTANT: 'assistant',
-  SYSTEM: 'system',
-  ERROR: 'error'
-};
-
-// Conversation status
+// Conversation Status Constants
 export const CONVERSATION_STATUS = {
   ACTIVE: 'active',
   ARCHIVED: 'archived',
   DELETED: 'deleted'
 };
 
-// Map UI labels → API enum values
-const intentMapping = {
-  "💻 Coding Help": CHAT_INTENTS.CODING,
-  "🌐 Translation": CHAT_INTENTS.TRANSLATION,
-  "💬 General Chat": CHAT_INTENTS.GENERAL
+// localStorage keys
+const STORAGE_KEYS = {
+  CONVERSATIONS: 'codementorx_conversations',
+  CURRENT_CONVERSATION: 'codementorx_current_conversation',
+  SETTINGS: 'codementorx_chat_settings'
+};
+
+// Chat Actions
+const CHAT_ACTIONS = {
+  // Loading states
+  SET_LOADING: 'SET_LOADING',
+  SET_SENDING: 'SET_SENDING',
+  
+  // Conversations
+  LOAD_CONVERSATIONS: 'LOAD_CONVERSATIONS',
+  SET_CURRENT_CONVERSATION: 'SET_CURRENT_CONVERSATION',
+  CREATE_CONVERSATION: 'CREATE_CONVERSATION',
+  DELETE_CONVERSATION: 'DELETE_CONVERSATION',
+  UPDATE_CONVERSATION: 'UPDATE_CONVERSATION',
+  
+  // Messages
+  ADD_MESSAGE: 'ADD_MESSAGE',
+  UPDATE_MESSAGE: 'UPDATE_MESSAGE',
+  SET_MESSAGES: 'SET_MESSAGES',
+  CLEAR_MESSAGES: 'CLEAR_MESSAGES',
+  
+  // Models and settings
+  SET_MODELS: 'SET_MODELS',
+  SET_SETTINGS: 'SET_SETTINGS',
+  
+  // Errors
+  SET_ERROR: 'SET_ERROR',
+  CLEAR_ERROR: 'CLEAR_ERROR',
 };
 
 // Initial state
 const initialState = {
-  // Current conversation
-  activeConversation: null,
+  // Conversations
+  conversations: [],
+  currentConversation: null,
+  
+  // Messages
   messages: [],
   
-  // All conversations
-  conversations: [],
-  
-  // UI state
-  inputValue: '',
-  isTyping: false,
-  isSending: false,
-  
-  // Service state
-  serviceStatus: 'unknown', // unknown, healthy, degraded, down
-  lastHealthCheck: null,
-  
-  // Rate limiting
-  rateLimitInfo: {
-    remaining: 100,
-    resetTime: Date.now() + 60000,
-    maxPerMinute: 100
+  // Models and settings
+  availableModels: [],
+  currentModel: 'gpt-4o-mini',
+  settings: {
+    temperature: 0.7,
+    maxTokens: 1000,
+    systemPrompt: null,
   },
   
-  // Error handling
+  // UI state
+  isLoading: false,
+  isSending: false,
   error: null,
-  lastError: null,
+  
+  // Stats
+  stats: null,
+};
+
+// localStorage Helper Functions
+const storageHelpers = {
+  // Save conversations to localStorage
+  saveConversations: (conversations, userId) => {
+    try {
+      const key = `${STORAGE_KEYS.CONVERSATIONS}_${userId}`;
+      localStorage.setItem(key, JSON.stringify(conversations));
+    } catch (error) {
+      console.error('Failed to save conversations to localStorage:', error);
+    }
+  },
+
+  // Load conversations from localStorage
+  loadConversations: (userId) => {
+    try {
+      const key = `${STORAGE_KEYS.CONVERSATIONS}_${userId}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load conversations from localStorage:', error);
+    }
+    return [];
+  },
+
+  // Save current conversation
+  saveCurrentConversation: (conversation, userId) => {
+    try {
+      const key = `${STORAGE_KEYS.CURRENT_CONVERSATION}_${userId}`;
+      localStorage.setItem(key, JSON.stringify(conversation));
+    } catch (error) {
+      console.error('Failed to save current conversation:', error);
+    }
+  },
+
+  // Load current conversation
+  loadCurrentConversation: (userId) => {
+    try {
+      const key = `${STORAGE_KEYS.CURRENT_CONVERSATION}_${userId}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load current conversation:', error);
+    }
+    return null;
+  },
+
+  // Save settings
+  saveSettings: (settings, userId) => {
+    try {
+      const key = `${STORAGE_KEYS.SETTINGS}_${userId}`;
+      localStorage.setItem(key, JSON.stringify(settings));
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    }
+  },
+
+  // Load settings
+  loadSettings: (userId) => {
+    try {
+      const key = `${STORAGE_KEYS.SETTINGS}_${userId}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+    }
+    return null;
+  },
+
+  // Clear user data from localStorage
+  clearUserData: (userId) => {
+    try {
+      const keys = [
+        `${STORAGE_KEYS.CONVERSATIONS}_${userId}`,
+        `${STORAGE_KEYS.CURRENT_CONVERSATION}_${userId}`,
+        `${STORAGE_KEYS.SETTINGS}_${userId}`
+      ];
+      keys.forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+      console.error('Failed to clear user data from localStorage:', error);
+    }
+  },
+
+  // Generate conversation ID
+  generateConversationId: () => {
+    return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
 };
 
 // Chat Reducer
 const chatReducer = (state, action) => {
   switch (action.type) {
-    case CHAT_ACTIONS.SEND_MESSAGE_START:
-      return {
-        ...state,
-        isSending: true,
-        error: null,
-        messages: [
-          ...state.messages,
-          {
-            id: action.payload.tempId,
-            type: MESSAGE_TYPES.USER,
-            content: action.payload.content,
-            timestamp: new Date().toISOString(),
-            isTemporary: true
-          }
-        ]
-      };
+    case CHAT_ACTIONS.SET_LOADING:
+      return { ...state, isLoading: action.payload };
     
-    case CHAT_ACTIONS.SEND_MESSAGE_SUCCESS:
-      const { userMessage, assistantMessage, conversationId } = action.payload;
-      
-      return {
-        ...state,
-        isSending: false,
-        isTyping: false,
-        inputValue: '',
-        activeConversation: conversationId,
-        messages: [
-          ...state.messages.filter(msg => msg.id !== userMessage.tempId),
-          {
-            ...userMessage,
-            isTemporary: false
-          },
-          assistantMessage
-        ]
-      };
-    
-    case CHAT_ACTIONS.SEND_MESSAGE_FAILURE:
-      return {
-        ...state,
-        isSending: false,
-        isTyping: false,
-        error: action.payload.error,
-        lastError: {
-          type: action.payload.type,
-          message: action.payload.error,
-          timestamp: new Date().toISOString(),
-          details: action.payload.details
-        },
-        // Remove temporary message on failure
-        messages: state.messages.filter(msg => !msg.isTemporary)
-      };
-    
-    case CHAT_ACTIONS.SET_ACTIVE_CONVERSATION:
-      return {
-        ...state,
-        activeConversation: action.payload.conversationId,
-        messages: action.payload.messages || []
-      };
+    case CHAT_ACTIONS.SET_SENDING:
+      return { ...state, isSending: action.payload };
     
     case CHAT_ACTIONS.LOAD_CONVERSATIONS:
-      return {
-        ...state,
-        conversations: action.payload
+      return { ...state, conversations: action.payload, isLoading: false };
+    
+    case CHAT_ACTIONS.SET_CURRENT_CONVERSATION:
+      return { 
+        ...state, 
+        currentConversation: action.payload,
+        messages: action.payload?.messages || []
       };
     
     case CHAT_ACTIONS.CREATE_CONVERSATION:
-      const newConversation = action.payload;
       return {
         ...state,
-        conversations: [newConversation, ...state.conversations],
-        activeConversation: newConversation.id,
-        messages: []
+        conversations: [action.payload, ...state.conversations],
+        currentConversation: action.payload,
+        messages: action.payload.messages || []
+      };
+    
+    case CHAT_ACTIONS.UPDATE_CONVERSATION:
+      const updatedConversations = state.conversations.map(conv =>
+        conv.conversation_id === action.payload.conversation_id 
+          ? { ...conv, ...action.payload }
+          : conv
+      );
+      return {
+        ...state,
+        conversations: updatedConversations,
+        currentConversation: state.currentConversation?.conversation_id === action.payload.conversation_id
+          ? { ...state.currentConversation, ...action.payload }
+          : state.currentConversation
       };
     
     case CHAT_ACTIONS.DELETE_CONVERSATION:
-      const conversationIdToDelete = action.payload;
+      const filteredConversations = state.conversations.filter(
+        conv => conv.conversation_id !== action.payload
+      );
       return {
         ...state,
-        conversations: state.conversations.filter(conv => conv.id !== conversationIdToDelete),
-        ...(state.activeConversation === conversationIdToDelete && {
-          activeConversation: null,
-          messages: []
-        })
+        conversations: filteredConversations,
+        currentConversation: state.currentConversation?.conversation_id === action.payload 
+          ? null : state.currentConversation,
+        messages: state.currentConversation?.conversation_id === action.payload 
+          ? [] : state.messages
       };
     
-    case CHAT_ACTIONS.SET_INPUT_VALUE:
-      return {
-        ...state,
-        inputValue: action.payload
+    case CHAT_ACTIONS.ADD_MESSAGE:
+      const newMessages = [...state.messages, action.payload];
+      return { 
+        ...state, 
+        messages: newMessages,
+        isSending: false
       };
     
-    case CHAT_ACTIONS.SET_TYPING_INDICATOR:
-      return {
-        ...state,
-        isTyping: action.payload
+    case CHAT_ACTIONS.UPDATE_MESSAGE:
+      const updatedMessages = state.messages.map(msg =>
+        msg.id === action.payload.id ? { ...msg, ...action.payload } : msg
+      );
+      return { ...state, messages: updatedMessages };
+    
+    case CHAT_ACTIONS.SET_MESSAGES:
+      return { ...state, messages: action.payload };
+    
+    case CHAT_ACTIONS.CLEAR_MESSAGES:
+      return { ...state, messages: [] };
+    
+    case CHAT_ACTIONS.SET_MODELS:
+      return { ...state, availableModels: action.payload };
+    
+    case CHAT_ACTIONS.SET_SETTINGS:
+      return { 
+        ...state, 
+        settings: { ...state.settings, ...action.payload }
       };
     
-    case CHAT_ACTIONS.CLEAR_ERRORS:
-      return {
-        ...state,
-        error: null,
-        lastError: null
+    case CHAT_ACTIONS.SET_ERROR:
+      return { 
+        ...state, 
+        error: action.payload, 
+        isLoading: false, 
+        isSending: false 
       };
     
-    case CHAT_ACTIONS.SET_SERVICE_STATUS:
-      return {
-        ...state,
-        serviceStatus: action.payload.status,
-        lastHealthCheck: action.payload.timestamp || new Date().toISOString()
-      };
-    
-    case CHAT_ACTIONS.UPDATE_RATE_LIMIT:
-      return {
-        ...state,
-        rateLimitInfo: action.payload
-      };
+    case CHAT_ACTIONS.CLEAR_ERROR:
+      return { ...state, error: null };
     
     default:
       return state;
   }
 };
 
-// Utility functions
-const generateMessageId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-const generateTempId = () => `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
 // Chat Provider Component
 export const ChatProvider = ({ children }) => {
   const [state, dispatch] = useReducer(chatReducer, initialState);
   const { isAuthenticated, user } = useAuth();
   
-  // Check service status on mount and periodically
+  // Load data from localStorage when user changes
   useEffect(() => {
-    const checkServiceStatus = async () => {
-      try {
-        const result = await chatbotAPI.getStatus();
-        dispatch({
-          type: CHAT_ACTIONS.SET_SERVICE_STATUS,
-          payload: {
-            status: result.success ? 'healthy' : 'degraded',
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (error) {
-        console.warn('Service status check failed:', error.message);
-        dispatch({
-          type: CHAT_ACTIONS.SET_SERVICE_STATUS,
-          payload: {
-            status: 'down',
-            timestamp: new Date().toISOString()
-          }
-        });
+    if (isAuthenticated && user) {
+      // Load conversations
+      const savedConversations = storageHelpers.loadConversations(user.id);
+      dispatch({ type: CHAT_ACTIONS.LOAD_CONVERSATIONS, payload: savedConversations });
+      
+      // Load current conversation
+      const savedCurrentConversation = storageHelpers.loadCurrentConversation(user.id);
+      if (savedCurrentConversation) {
+        dispatch({ type: CHAT_ACTIONS.SET_CURRENT_CONVERSATION, payload: savedCurrentConversation });
       }
-    };
-    
-    if (isAuthenticated) {
-      checkServiceStatus();
-      const interval = setInterval(checkServiceStatus, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [isAuthenticated]);
-  
-  // Update rate limit info periodically
-  useEffect(() => {
-    const updateRateLimit = () => {
-      const info = getRateLimitInfo();
-      dispatch({
-        type: CHAT_ACTIONS.UPDATE_RATE_LIMIT,
-        payload: info
-      });
-    };
-    
-    updateRateLimit();
-    const interval = setInterval(updateRateLimit, 10000);
-    return () => clearInterval(interval);
-  }, []);
-  
-  // Reset conversation when user logs out
-  useEffect(() => {
-    if (!isAuthenticated) {
-      dispatch({
-        type: CHAT_ACTIONS.SET_ACTIVE_CONVERSATION,
-        payload: { conversationId: null, messages: [] }
-      });
+      
+      // Load settings
+      const savedSettings = storageHelpers.loadSettings(user.id);
+      if (savedSettings) {
+        dispatch({ type: CHAT_ACTIONS.SET_SETTINGS, payload: savedSettings });
+      }
+      
+      // Load models from API
+      loadModels();
+    } else {
+      // Clear state when logged out
       dispatch({ type: CHAT_ACTIONS.LOAD_CONVERSATIONS, payload: [] });
-      dispatch({ type: CHAT_ACTIONS.CLEAR_ERRORS });
+      dispatch({ type: CHAT_ACTIONS.SET_CURRENT_CONVERSATION, payload: null });
+      dispatch({ type: CHAT_ACTIONS.CLEAR_MESSAGES });
+    }
+  }, [isAuthenticated, user]);
+
+  // Save to localStorage when conversations change
+  useEffect(() => {
+    if (isAuthenticated && user && state.conversations.length > 0) {
+      storageHelpers.saveConversations(state.conversations, user.id);
+    }
+  }, [state.conversations, isAuthenticated, user]);
+
+  // Save current conversation when it changes
+  useEffect(() => {
+    if (isAuthenticated && user && state.currentConversation) {
+      storageHelpers.saveCurrentConversation(state.currentConversation, user.id);
+    }
+  }, [state.currentConversation, isAuthenticated, user]);
+
+  // Save settings when they change
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      storageHelpers.saveSettings(state.settings, user.id);
+    }
+  }, [state.settings, isAuthenticated, user]);
+
+  // Load available models
+  const loadModels = useCallback(async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      const modelsData = await chatbotAPI.getModels();
+      dispatch({ 
+        type: CHAT_ACTIONS.SET_MODELS, 
+        payload: modelsData.models || [] 
+      });
+    } catch (error) {
+      console.error('Failed to load models:', error);
+      // Use default models if API fails
+      dispatch({ 
+        type: CHAT_ACTIONS.SET_MODELS, 
+        payload: [
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+          { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
+        ]
+      });
     }
   }, [isAuthenticated]);
-  
-  // Send message function with intent normalization
-  const sendMessage = useCallback(async (content, intent = CHAT_INTENTS.GENERAL) => {
-    if (!isAuthenticated) throw new Error('Authentication required');
-    if (!content || content.trim().length === 0) throw new Error('Message cannot be empty');
 
-    const tempId = generateTempId();
-    const normalizedIntent = intentMapping[intent] || intent || CHAT_INTENTS.GENERAL;
-
+  // Send a new message
+  const sendMessage = useCallback(async (messageText, conversationId = null) => {
+    if (!messageText.trim() || !user) return;
+    
     try {
-      // Start sending
-      dispatch({ type: CHAT_ACTIONS.SEND_MESSAGE_START, payload: { tempId, content: content.trim() } });
-
-      const typingTimeout = setTimeout(() => {
-        dispatch({ type: CHAT_ACTIONS.SET_TYPING_INDICATOR, payload: true });
-      }, 500);
+      dispatch({ type: CHAT_ACTIONS.SET_SENDING, payload: true });
+      dispatch({ type: CHAT_ACTIONS.CLEAR_ERROR });
       
-      // API call
-      const response = await chatbotAPI.sendMessage({
-        content: content.trim(),
-        conversationId: state.activeConversation,
-        intent: normalizedIntent,
-        metadata: {
-          source: 'web_app',
-          user_id: user?.id,
-          timestamp: new Date().toISOString()
-        }
-      });
+      // Validate message
+      const validation = MessageHelpers.validateMessage(messageText);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
       
-      clearTimeout(typingTimeout);
-
-      // User + Assistant messages
+      // Generate conversation ID if needed
+      const finalConversationId = conversationId || storageHelpers.generateConversationId();
+      
+      // Add user message to UI immediately
       const userMessage = {
-        id: generateMessageId(),
-        tempId,
-        type: MESSAGE_TYPES.USER,
-        content: content.trim(),
+        id: `user_${finalConversationId}_${Date.now()}`,
+        role: 'user',
+        content: messageText,
         timestamp: new Date().toISOString(),
-        intent: normalizedIntent,
-        conversationId: response.data.conversationId
+        conversationId: finalConversationId
       };
       
-      const assistantMessage = {
-        id: response.data.messageId || generateMessageId(),
-        type: MESSAGE_TYPES.ASSISTANT,
-        content: response.data.reply,
-        timestamp: response.data.timestamp || new Date().toISOString(),
-        intent: response.data.intent,
-        metadata: response.data.metadata,
-        conversationId: response.data.conversationId,
-        processingTime: response.data.processingTime
+      dispatch({ type: CHAT_ACTIONS.ADD_MESSAGE, payload: userMessage });
+      
+      // Prepare message data with conversation context
+      const messageData = {
+        message: messageText,
+        conversationId: finalConversationId,
+        context: state.messages.slice(-10), // Last 10 messages for context
+        model: state.currentModel,
+        temperature: state.settings.temperature,
+        maxTokens: state.settings.maxTokens,
+        systemPrompt: state.settings.systemPrompt,
       };
       
-      dispatch({
-        type: CHAT_ACTIONS.SEND_MESSAGE_SUCCESS,
-        payload: { userMessage, assistantMessage, conversationId: response.data.conversationId }
-      });
+      // Send to API (backend is stateless, just processes the message)
+      const response = await chatbotAPI.sendMessage(messageData);
       
-      if (!state.activeConversation && response.data.conversationId) {
+      // Add AI response to messages
+      const aiMessage = {
+        id: `ai_${finalConversationId}_${Date.now()}`,
+        role: 'assistant',
+        content: response.message,
+        timestamp: response.timestamp,
+        conversationId: finalConversationId,
+        modelUsed: response.model_used,
+        tokenUsage: response.token_usage
+      };
+      
+      dispatch({ type: CHAT_ACTIONS.ADD_MESSAGE, payload: aiMessage });
+      
+      // Update conversation with new messages
+      let currentConv = state.currentConversation;
+      
+      if (!conversationId) {
+        // Create new conversation
         const newConversation = {
-          id: response.data.conversationId,
-          title: content.slice(0, 50) + (content.length > 50 ? '...' : ''),
-          status: CONVERSATION_STATUS.ACTIVE,
+          conversation_id: finalConversationId,
+          title: MessageHelpers.generateTitle(messageText),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           message_count: 2,
-          last_message: content.slice(0, 100) + (content.length > 100 ? '...' : '')
+          messages: [userMessage, aiMessage]
         };
-        dispatch({ type: CHAT_ACTIONS.LOAD_CONVERSATIONS, payload: [newConversation, ...state.conversations] });
+        
+        dispatch({ type: CHAT_ACTIONS.CREATE_CONVERSATION, payload: newConversation });
+        currentConv = newConversation;
+      } else {
+        // Update existing conversation
+        const updatedMessages = [...state.messages, userMessage, aiMessage];
+        const updatedConversation = {
+          ...currentConv,
+          updated_at: new Date().toISOString(),
+          message_count: updatedMessages.length,
+          messages: updatedMessages
+        };
+        
+        dispatch({ type: CHAT_ACTIONS.UPDATE_CONVERSATION, payload: updatedConversation });
       }
       
-      return { success: true, conversationId: response.data.conversationId, messages: [userMessage, assistantMessage], metadata: response.data.metadata };
+      return {
+        success: true,
+        conversationId: finalConversationId,
+        message: response.message
+      };
       
     } catch (error) {
-      let errorType = 'UNKNOWN_ERROR';
-      let errorMessage = 'Failed to send message';
-      let errorDetails = {};
+      console.error('Error sending message:', error);
       
-      if (error instanceof ChatbotError) {
-        errorType = error.code;
-        errorMessage = error.message;
-        errorDetails = error.details || {};
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
+      // Remove temporary message on error
+      dispatch({ 
+        type: CHAT_ACTIONS.SET_MESSAGES, 
+        payload: state.messages.filter(m => m.id !== userMessage?.id) 
+      });
       
-      switch (errorType) {
-        case 'RATE_LIMITED':
-          errorMessage = `You are sending messages too quickly. Please wait ${errorDetails.retryAfter || 60} seconds.`; break;
-        case 'UNAUTHORIZED':
-          errorMessage = 'Your session has expired. Please log in again.'; break;
-        case 'NETWORK_ERROR':
-          errorMessage = 'Unable to connect to the chat service. Please check your internet connection.'; break;
-        case 'TIMEOUT':
-          errorMessage = 'The request timed out. Please try again.'; break;
-        case 'SERVICE_ERROR':
-          errorMessage = 'The chat service is temporarily unavailable. Please try again in a moment.'; break;
-        case 'MESSAGE_TOO_LONG':
-          errorMessage = 'Your message is too long. Please limit to 4000 characters.'; break;
-        case 'INVALID_INPUT':
-          errorMessage = 'Please enter a valid message.'; break;
-      }
+      const errorMessage = error.response?.data?.detail || 
+                          error.message || 
+                          'Failed to send message';
       
-      dispatch({ type: CHAT_ACTIONS.SEND_MESSAGE_FAILURE, payload: { type: errorType, error: errorMessage, details: errorDetails } });
-      return { success: false, error: errorMessage, type: errorType, details: errorDetails };
+      dispatch({ type: CHAT_ACTIONS.SET_ERROR, payload: errorMessage });
+      
+      return { success: false, error: errorMessage };
     }
-  }, [isAuthenticated, state.activeConversation, state.conversations, user]);
-  
-  // Helpers
-  const setInputValue = useCallback((value) => dispatch({ type: CHAT_ACTIONS.SET_INPUT_VALUE, payload: value }), []);
-  const clearErrors = useCallback(() => dispatch({ type: CHAT_ACTIONS.CLEAR_ERRORS }), []);
-  const createNewConversation = useCallback(() => {
-    dispatch({ type: CHAT_ACTIONS.SET_ACTIVE_CONVERSATION, payload: { conversationId: null, messages: [] } });
-    dispatch({ type: CHAT_ACTIONS.SET_INPUT_VALUE, payload: '' });
-    dispatch({ type: CHAT_ACTIONS.CLEAR_ERRORS });
-  }, []);
-  const switchConversation = useCallback((conversationId) => {
-    dispatch({ type: CHAT_ACTIONS.SET_ACTIVE_CONVERSATION, payload: { conversationId, messages: [] } });
-    dispatch({ type: CHAT_ACTIONS.CLEAR_ERRORS });
-  }, []);
-  const deleteConversation = useCallback((conversationId) => dispatch({ type: CHAT_ACTIONS.DELETE_CONVERSATION, payload: conversationId }), []);
-  const loadConversations = useCallback(async () => {
-    if (!isAuthenticated) return;
+  }, [state.messages, state.currentModel, state.settings, state.currentConversation, user]);
+
+  // Load a specific conversation (from localStorage)
+  const loadConversation = useCallback(async (conversationId) => {
     try {
-      const result = await chatbotAPI.getConversations();
-      if (result.success && result.data.conversations) {
-        dispatch({ type: CHAT_ACTIONS.LOAD_CONVERSATIONS, payload: result.data.conversations });
+      dispatch({ type: CHAT_ACTIONS.SET_LOADING, payload: true });
+      dispatch({ type: CHAT_ACTIONS.CLEAR_ERROR });
+      
+      // Find conversation in localStorage
+      const conversation = state.conversations.find(c => c.conversation_id === conversationId);
+      
+      if (!conversation) {
+        throw new Error('Conversation not found');
       }
+      
+      dispatch({ type: CHAT_ACTIONS.SET_CURRENT_CONVERSATION, payload: conversation });
+      
+      return { success: true, conversation };
+      
     } catch (error) {
-      console.warn('Failed to load conversations:', error);
+      console.error('Error loading conversation:', error);
+      const errorMessage = error.message || 'Failed to load conversation';
+      
+      dispatch({ type: CHAT_ACTIONS.SET_ERROR, payload: errorMessage });
+      return { success: false, error: errorMessage };
     }
-  }, [isAuthenticated]);
-  
-  const getConversationSummary = useCallback(() => {
-    if (state.messages.length === 0) {
-      return { messageCount: 0, lastMessage: null, hasErrors: false, totalMessages: 0 };
+  }, [state.conversations]);
+
+  // Delete a conversation (from localStorage)
+  const deleteConversation = useCallback(async (conversationId) => {
+    try {
+      dispatch({ type: CHAT_ACTIONS.DELETE_CONVERSATION, payload: conversationId });
+      
+      // Also clear from localStorage current conversation if it matches
+      if (user && state.currentConversation?.conversation_id === conversationId) {
+        storageHelpers.saveCurrentConversation(null, user.id);
+      }
+      
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      const errorMessage = 'Failed to delete conversation';
+      
+      dispatch({ type: CHAT_ACTIONS.SET_ERROR, payload: errorMessage });
+      return { success: false, error: errorMessage };
     }
-    const userMessages = state.messages.filter(msg => msg.type === MESSAGE_TYPES.USER && !msg.isTemporary);
-    const lastMessage = state.messages[state.messages.length - 1];
-    const hasErrors = state.messages.some(msg => msg.type === MESSAGE_TYPES.ERROR);
-    return { messageCount: userMessages.length, lastMessage, hasErrors, totalMessages: state.messages.length };
-  }, [state.messages]);
-  
-  const canSendMessage = useCallback(() => {
-    const trimmedInput = state.inputValue.trim();
-    return (isAuthenticated && !state.isSending && trimmedInput.length > 0 && trimmedInput.length <= 4000 && state.rateLimitInfo.remaining > 0 && state.serviceStatus !== 'down');
-  }, [isAuthenticated, state.isSending, state.inputValue, state.rateLimitInfo.remaining, state.serviceStatus]);
-  
-  const getErrorDisplayMessage = useCallback(() => state.error || null, [state.error]);
-  
+  }, [state.currentConversation, user]);
+
+  // Start a new conversation
+  const startNewConversation = useCallback(() => {
+    dispatch({ type: CHAT_ACTIONS.SET_CURRENT_CONVERSATION, payload: null });
+    dispatch({ type: CHAT_ACTIONS.CLEAR_MESSAGES });
+    dispatch({ type: CHAT_ACTIONS.CLEAR_ERROR });
+    
+    // Clear current conversation from localStorage
+    if (user) {
+      storageHelpers.saveCurrentConversation(null, user.id);
+    }
+  }, [user]);
+
+  // Update chat settings
+  const updateSettings = useCallback((newSettings) => {
+    dispatch({ type: CHAT_ACTIONS.SET_SETTINGS, payload: newSettings });
+  }, []);
+
+  // Clear error
+  const clearError = useCallback(() => {
+    dispatch({ type: CHAT_ACTIONS.CLEAR_ERROR });
+  }, []);
+
+  // Clear all data (for logout)
+  const clearAllData = useCallback(() => {
+    if (user) {
+      storageHelpers.clearUserData(user.id);
+    }
+    dispatch({ type: CHAT_ACTIONS.LOAD_CONVERSATIONS, payload: [] });
+    dispatch({ type: CHAT_ACTIONS.SET_CURRENT_CONVERSATION, payload: null });
+    dispatch({ type: CHAT_ACTIONS.CLEAR_MESSAGES });
+  }, [user]);
+
+  // Context value
   const value = {
+    // State
     ...state,
+    
+    // Actions
     sendMessage,
-    setInputValue,
-    clearErrors,
-    createNewConversation,
-    switchConversation,
+    loadConversation,
     deleteConversation,
-    loadConversations,
-    canSendMessage: canSendMessage(),
-    conversationSummary: getConversationSummary(),
-    errorDisplayMessage: getErrorDisplayMessage(),
-    isRateLimited: state.rateLimitInfo.remaining <= 0,
-    isServiceHealthy: state.serviceStatus === 'healthy',
-    isServiceDegraded: state.serviceStatus === 'degraded',
-    isServiceDown: state.serviceStatus === 'down',
-    currentUser: user,
-    hasActiveConversation: !!state.activeConversation,
-    hasMessages: state.messages.length > 0,
-    hasErrors: !!state.error,
+    startNewConversation,
+    updateSettings,
+    clearError,
+    clearAllData,
+    
+    // Computed values
+    hasConversations: state.conversations.length > 0,
+    canSend: !state.isSending && isAuthenticated,
+    totalMessages: state.conversations.reduce((total, conv) => total + (conv.message_count || 0), 0),
+    storageType: 'localStorage', // Indicator for debugging
   };
   
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  return (
+    <ChatContext.Provider value={value}>
+      {children}
+    </ChatContext.Provider>
+  );
 };
 
-// Custom hook
+// Custom hook to use Chat Context
 export const useChat = () => {
   const context = useContext(ChatContext);
-  if (!context) throw new Error('useChat must be used within a ChatProvider');
-  return context;
-};
+  
+  if (!context) {
+    throw new Error('useChat must be used within a ChatProvider');
+  }
+  
+  return context;};
 
-export { CHAT_INTENTS };
+// Debug helper for development
+export const useChatDebug = () => {
+  const {
+    conversations,
+    currentConversation,
+    messages,
+    availableModels,
+    currentModel,
+    settings,
+    isLoading,
+    isSending,
+    error,
+    totalMessages,
+    storageType,
+  } = useChat();
+
+  return {
+    conversations,
+    currentConversation,
+    messages,
+    availableModels,
+    currentModel,
+    settings,
+    isLoading,
+    isSending,
+    error,
+    totalMessages,
+    storageType,
+  };
+};

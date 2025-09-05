@@ -1,6 +1,6 @@
 /**
  * Sidebar.jsx - Conversation History & Session Management
- * Displays conversation list, search, and user profile
+ * Updated for localStorage version with proper user context
  */
 import { useState, useMemo } from 'react';
 import { 
@@ -8,15 +8,13 @@ import {
   Search, 
   MessageSquare, 
   Trash2, 
-  Archive, 
   User, 
   Settings, 
   LogOut,
   ChevronDown,
-  Clock,
-  Filter
+  Clock
 } from 'lucide-react';
-import { useChat, CONVERSATION_STATUS } from '../context/ChatContext';
+import { useChat } from '../context/ChatContext';
 import { useAuth } from '../context/AuthContext';
 
 // Conversation item component
@@ -24,8 +22,7 @@ const ConversationItem = ({
   conversation, 
   isActive, 
   onSelect, 
-  onDelete, 
-  onArchive 
+  onDelete 
 }) => {
   const [showActions, setShowActions] = useState(false);
   
@@ -64,7 +61,7 @@ const ConversationItem = ({
           <div className="flex items-center space-x-2 mb-1">
             <MessageSquare className="h-4 w-4 text-gray-500 flex-shrink-0" />
             <h3 className="text-sm font-medium text-gray-900 truncate">
-              {conversation.title}
+              {conversation.title || 'New Conversation'}
             </h3>
           </div>
           
@@ -72,7 +69,7 @@ const ConversationItem = ({
             <div className="flex items-center space-x-2">
               <Clock className="h-3 w-3 text-gray-400" />
               <span className="text-xs text-gray-500">
-                {formatDate(conversation.updated_at)}
+                {formatDate(conversation.updated_at || conversation.created_at)}
               </span>
             </div>
             
@@ -81,10 +78,6 @@ const ConversationItem = ({
                 <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
                   {conversation.message_count}
                 </span>
-              )}
-              
-              {conversation.status === CONVERSATION_STATUS.ARCHIVED && (
-                <Archive className="h-3 w-3 text-gray-400" />
               )}
             </div>
           </div>
@@ -97,18 +90,7 @@ const ConversationItem = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onArchive(conversation.id);
-            }}
-            className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-700"
-            title="Archive conversation"
-          >
-            <Archive className="h-3 w-3" />
-          </button>
-          
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(conversation.id);
+              onDelete(conversation.conversation_id);
             }}
             className="p-1 hover:bg-red-50 rounded text-gray-500 hover:text-red-600"
             title="Delete conversation"
@@ -128,19 +110,48 @@ const UserProfile = () => {
   
   if (!user) return null;
   
+  const getInitials = () => {
+    if (user.first_name && user.last_name) {
+      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
+    }
+    if (user.first_name) {
+      return user.first_name[0].toUpperCase();
+    }
+    if (user.username) {
+      return user.username[0].toUpperCase();
+    }
+    if (user.email) {
+      return user.email[0].toUpperCase();
+    }
+    return 'U';
+  };
+  
+  const getDisplayName = () => {
+    if (user.first_name && user.last_name) {
+      return `${user.first_name} ${user.last_name}`;
+    }
+    if (user.first_name) {
+      return user.first_name;
+    }
+    if (user.username) {
+      return user.username;
+    }
+    return 'User';
+  };
+  
   return (
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center space-x-3 p-3 hover:bg-gray-100 rounded-lg transition-colors"
       >
-        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
-          {user.first_name?.[0] || user.username?.[0] || user.email?.[0]}
+        <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-sm">
+          {getInitials()}
         </div>
         
         <div className="flex-1 text-left min-w-0">
           <p className="text-sm font-medium text-gray-900 truncate">
-            {user.full_name || user.username}
+            {getDisplayName()}
           </p>
           <p className="text-xs text-gray-500 truncate">
             {user.email}
@@ -161,6 +172,7 @@ const UserProfile = () => {
               onClick={() => {
                 setIsOpen(false);
                 // Navigate to profile page
+                window.location.href = '/profile';
               }}
               className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
             >
@@ -172,6 +184,7 @@ const UserProfile = () => {
               onClick={() => {
                 setIsOpen(false);
                 // Navigate to settings page
+                window.location.href = '/settings';
               }}
               className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
             >
@@ -198,91 +211,65 @@ const UserProfile = () => {
   );
 };
 
-// Filter component
-const ConversationFilter = ({ activeFilter, onFilterChange }) => {
-  const filters = [
-    { key: 'all', label: 'All Chats', count: null },
-    { key: 'active', label: 'Active', count: null },
-    { key: 'archived', label: 'Archived', count: null },
-  ];
-  
-  return (
-    <div className="flex space-x-1 mb-4">
-      {filters.map((filter) => (
-        <button
-          key={filter.key}
-          onClick={() => onFilterChange(filter.key)}
-          className={`px-3 py-1 text-xs rounded-full transition-colors ${
-            activeFilter === filter.key
-              ? 'bg-blue-100 text-blue-700'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-          }`}
-        >
-          {filter.label}
-        </button>
-      ))}
-    </div>
-  );
-};
-
 // Main Sidebar component
 const Sidebar = ({ isCollapsed = false }) => {
   const {
     conversations,
-    activeConversation,
-    createNewConversation,
-    switchConversation,
+    currentConversation,
+    startNewConversation,
+    loadConversation,
     deleteConversation,
-    conversationSummary
+    messages,
+    isLoading,
+    error,
+    hasConversations,
+    totalMessages
   } = useChat();
   
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all');
   
   // Filter and search conversations
   const filteredConversations = useMemo(() => {
-    let filtered = conversations;
-    
-    // Apply status filter
-    if (activeFilter === 'active') {
-      filtered = filtered.filter(conv => conv.status === CONVERSATION_STATUS.ACTIVE);
-    } else if (activeFilter === 'archived') {
-      filtered = filtered.filter(conv => conv.status === CONVERSATION_STATUS.ARCHIVED);
-    }
+    let filtered = conversations || [];
     
     // Apply search filter
     if (searchTerm.trim()) {
       const search = searchTerm.toLowerCase();
       filtered = filtered.filter(conv =>
-        conv.title.toLowerCase().includes(search)
+        (conv.title || '').toLowerCase().includes(search)
       );
     }
     
     // Sort by updated_at (most recent first)
-    return filtered.sort((a, b) => 
-      new Date(b.updated_at) - new Date(a.updated_at)
-    );
-  }, [conversations, activeFilter, searchTerm]);
+    return filtered.sort((a, b) => {
+      const dateA = new Date(a.updated_at || a.created_at || 0);
+      const dateB = new Date(b.updated_at || b.created_at || 0);
+      return dateB - dateA;
+    });
+  }, [conversations, searchTerm]);
   
   const handleNewConversation = () => {
-    createNewConversation();
+    startNewConversation();
   };
   
-  const handleConversationSelect = (conversationId) => {
-    switchConversation(conversationId);
-  };
-  
-  const handleConversationDelete = (conversationId) => {
-    if (window.confirm('Are you sure you want to delete this conversation?')) {
-      deleteConversation(conversationId);
+  const handleConversationSelect = async (conversationId) => {
+    const result = await loadConversation(conversationId);
+    if (!result.success) {
+      console.error('Failed to load conversation:', result.error);
     }
   };
   
-  const handleConversationArchive = (conversationId) => {
-    // In a real implementation, this would call an API to archive
-    console.log('Archive conversation:', conversationId);
+  const handleConversationDelete = async (conversationId) => {
+    if (window.confirm('Are you sure you want to delete this conversation?')) {
+      const result = await deleteConversation(conversationId);
+      if (!result.success) {
+        alert('Failed to delete conversation: ' + result.error);
+      }
+    }
   };
   
+  // Collapsed sidebar
   if (isCollapsed) {
     return (
       <div className="w-16 bg-white border-r border-gray-200 flex flex-col">
@@ -297,29 +284,34 @@ const Sidebar = ({ isCollapsed = false }) => {
         </div>
         
         <div className="flex-1 overflow-y-auto">
-          {conversations.slice(0, 5).map((conversation) => (
+          {filteredConversations.slice(0, 5).map((conversation) => (
             <button
-              key={conversation.id}
-              onClick={() => handleConversationSelect(conversation.id)}
+              key={conversation.conversation_id}
+              onClick={() => handleConversationSelect(conversation.conversation_id)}
               className={`w-full p-3 flex justify-center ${
-                activeConversation === conversation.id
+                currentConversation?.conversation_id === conversation.conversation_id
                   ? 'bg-blue-100 border-r-2 border-blue-600'
                   : 'hover:bg-gray-100'
               }`}
-              title={conversation.title}
+              title={conversation.title || 'New Conversation'}
             >
               <MessageSquare className="h-5 w-5 text-gray-600" />
             </button>
           ))}
         </div>
         
-        <div className="p-4 border-t border-gray-200">
-          <UserProfile />
+        <div className="p-2 border-t border-gray-200">
+          {user && (
+            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium text-xs mx-auto">
+              {user.first_name?.[0]?.toUpperCase() || user.username?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || 'U'}
+            </div>
+          )}
         </div>
       </div>
     );
   }
   
+  // Full sidebar
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
       {/* Header */}
@@ -329,6 +321,7 @@ const Sidebar = ({ isCollapsed = false }) => {
           <button
             onClick={handleNewConversation}
             className="flex items-center space-x-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+            disabled={isLoading}
           >
             <Plus className="h-4 w-4" />
             <span>New Chat</span>
@@ -336,7 +329,7 @@ const Sidebar = ({ isCollapsed = false }) => {
         </div>
         
         {/* Search */}
-        <div className="relative mb-4">
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
@@ -346,62 +339,93 @@ const Sidebar = ({ isCollapsed = false }) => {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
         </div>
-        
-        {/* Filters */}
-        <ConversationFilter 
-          activeFilter={activeFilter}
-          onFilterChange={setActiveFilter}
-        />
       </div>
       
+      {/* Error Display */}
+      {error && (
+        <div className="flex-none p-4 bg-red-50 border-b border-red-200">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+      
       {/* Conversations List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {filteredConversations.length === 0 ? (
-          <div className="text-center py-8">
+      <div className="flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="p-4">
+            <div className="animate-pulse space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-16 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
+          </div>
+        ) : filteredConversations.length === 0 ? (
+          <div className="text-center py-8 px-4">
             <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 mb-3">
               {searchTerm.trim() 
                 ? 'No conversations found'
-                : 'No conversations yet'
+                : hasConversations 
+                  ? 'No conversations match your search'
+                  : 'No conversations yet'
               }
             </p>
-            {!searchTerm.trim() && (
+            {!searchTerm.trim() && !hasConversations && (
               <button
                 onClick={handleNewConversation}
-                className="mt-3 text-sm text-blue-600 hover:text-blue-700"
+                className="text-sm text-blue-600 hover:text-blue-700"
               >
                 Start your first conversation
               </button>
             )}
           </div>
         ) : (
-          filteredConversations.map((conversation) => (
-            <ConversationItem
-              key={conversation.id}
-              conversation={conversation}
-              isActive={activeConversation === conversation.id}
-              onSelect={() => handleConversationSelect(conversation.id)}
-              onDelete={handleConversationDelete}
-              onArchive={handleConversationArchive}
-            />
-          ))
+          <div className="p-4 space-y-2">
+            {filteredConversations.map((conversation) => (
+              <ConversationItem
+                key={conversation.conversation_id}
+                conversation={conversation}
+                isActive={currentConversation?.conversation_id === conversation.conversation_id}
+                onSelect={() => handleConversationSelect(conversation.conversation_id)}
+                onDelete={handleConversationDelete}
+              />
+            ))}
+          </div>
         )}
       </div>
       
       {/* Current Conversation Stats */}
-      {activeConversation && conversationSummary.messageCount > 0 && (
+      {currentConversation && messages.length > 0 && (
         <div className="flex-none p-4 border-t border-gray-200 bg-gray-50">
           <div className="text-xs text-gray-600 space-y-1">
             <div className="flex justify-between">
               <span>Messages:</span>
-              <span>{conversationSummary.messageCount}</span>
+              <span>{messages.length}</span>
             </div>
-            {conversationSummary.hasErrors && (
-              <div className="flex justify-between text-red-600">
-                <span>Has Errors:</span>
-                <span>Yes</span>
-              </div>
-            )}
+            <div className="flex justify-between">
+              <span>Conversation:</span>
+              <span className="truncate ml-2" title={currentConversation.title}>
+                {currentConversation.title || 'New Conversation'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Statistics Summary */}
+      {hasConversations && (
+        <div className="flex-none p-4 border-t border-gray-200 bg-blue-50">
+          <div className="text-xs text-blue-600 space-y-1">
+            <div className="flex justify-between">
+              <span>Total Conversations:</span>
+              <span>{conversations.length}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Total Messages:</span>
+              <span>{totalMessages || 0}</span>
+            </div>
+            <div className="text-center mt-2 text-xs text-blue-500">
+              💾 Stored in localStorage
+            </div>
           </div>
         </div>
       )}

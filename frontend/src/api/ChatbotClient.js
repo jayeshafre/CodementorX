@@ -1,380 +1,420 @@
 /**
- * ChatbotClient.js - FastAPI Chatbot Service Integration
- * FIXED: Proper field mapping between frontend/backend
+ * Chatbot API Client for FastAPI Service - localStorage Version
+ * Handles communication with the stateless FastAPI chatbot service
  */
 import axios from 'axios';
 import { TokenManager } from './axiosClient';
 
-// Create dedicated chatbot axios instance
+// Create axios instance for chatbot service
 const chatbotClient = axios.create({
   baseURL: import.meta.env.VITE_CHATBOT_API_URL || 'http://localhost:8001/api',
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 seconds for AI responses
+  timeout: 30000, // 30 seconds timeout for AI responses
 });
 
-// Request retry configuration
-const RETRY_CONFIG = {
-  maxRetries: 3,
-  retryDelay: 1000,
-  backoffMultiplier: 2,
-};
-
-// Rate limiting tracking
-const rateLimitTracker = {
-  requests: [],
-  maxPerMinute: 100,
-  
-  canMakeRequest() {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60000;
-    this.requests = this.requests.filter(timestamp => timestamp > oneMinuteAgo);
-    return this.requests.length < this.maxPerMinute;
-  },
-  
-  recordRequest() {
-    this.requests.push(Date.now());
-  }
-};
-
-// Request interceptor
+// Request interceptor to add auth token
 chatbotClient.interceptors.request.use(
   (config) => {
     const token = TokenManager.getAccessToken();
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     
-    config.headers['X-Request-ID'] = `chatbot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    if (!rateLimitTracker.canMakeRequest()) {
-      throw new Error('Rate limit exceeded. Please slow down your requests.');
-    }
-    rateLimitTracker.recordRequest();
-    
+    // Log request in development
     if (import.meta.env.DEV) {
       console.log(`🤖 Chatbot Request: ${config.method?.toUpperCase()} ${config.url}`);
     }
     
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('❌ Chatbot Request Error:', error);
+    return Promise.reject(error);
+  }
 );
 
-// Response interceptor
+// Response interceptor for error handling
 chatbotClient.interceptors.response.use(
   (response) => {
+    // Log response in development
     if (import.meta.env.DEV) {
       console.log(`✅ Chatbot Response: ${response.status} ${response.config.url}`);
     }
     return response;
   },
   async (error) => {
-    const originalRequest = error.config;
+    // If token expired, try to refresh and retry
+    if (error.response?.status === 401) {
+      console.warn('Chatbot service received 401 - token may be expired');
+      // Let the main axios client handle token refresh
+      // This request will be retried automatically via the auth context
+    }
     
+    // Log error in development
     if (import.meta.env.DEV) {
       console.error(`❌ Chatbot Error: ${error.response?.status} ${error.config?.url}`, {
-        message: error.response?.data?.error || error.message,
-        details: error.response?.data
+        message: error.response?.data?.detail || error.message,
+        data: error.response?.data,
       });
     }
     
-    // Handle various error types...
-    if (error.response?.status === 401) {
-      throw error;
-    }
-    
-    if (error.response?.status === 429) {
-      const retryAfter = error.response.headers['retry-after'] || 
-                        error.response.data?.retry_after || 60;
-      throw new ChatbotError(
-        'Rate limit exceeded. Please wait before sending more messages.',
-        'RATE_LIMITED',
-        { retryAfter: parseInt(retryAfter) }
-      );
-    }
-    
-    if (error.response?.status === 422) {
-      const validationDetails = error.response?.data?.detail || [];
-      let errorMessage = 'Invalid request data';
-      
-      if (Array.isArray(validationDetails) && validationDetails.length > 0) {
-        const fieldErrors = validationDetails.map(err => 
-          `${err.loc?.join('.')} - ${err.msg}`
-        ).join('; ');
-        errorMessage = `Validation failed: ${fieldErrors}`;
-      }
-      
-      throw new ChatbotError(errorMessage, 'VALIDATION_ERROR', { 
-        details: validationDetails 
-      });
-    }
-    
-    // Retry logic
-    if (shouldRetry(error) && !originalRequest._retryCount) {
-      originalRequest._retryCount = 0;
-    }
-    
-    if (shouldRetry(error) && originalRequest._retryCount < RETRY_CONFIG.maxRetries) {
-      originalRequest._retryCount += 1;
-      const delay = RETRY_CONFIG.retryDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, originalRequest._retryCount - 1);
-      
-      console.log(`🔄 Retrying request (${originalRequest._retryCount}/${RETRY_CONFIG.maxRetries}) after ${delay}ms`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return chatbotClient(originalRequest);
-    }
-    
-    throw error;
+    return Promise.reject(error);
   }
 );
 
-// Custom error class
-class ChatbotError extends Error {
-  constructor(message, code = 'CHATBOT_ERROR', details = {}) {
-    super(message);
-    this.name = 'ChatbotError';
-    this.code = code;
-    this.details = details;
-  }
-}
-
-function shouldRetry(error) {
-  if (error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 429) {
-    return false;
-  }
-  return (
-    !error.response ||
-    error.code === 'ECONNABORTED' ||
-    error.response.status >= 500
-  );
-}
-
-// Chat intent enum
-export const CHAT_INTENTS = {
-  GENERAL: 'general',
-  CODING: 'coding', 
-  TRANSLATION: 'translation'
-};
-
 // API endpoints
-const ENDPOINTS = {
-  CHAT: '/chat/',
+export const CHATBOT_ENDPOINTS = {
+  // Chat - only need message endpoint for localStorage version
+  SEND_MESSAGE: '/chat/message',
+  CONTINUE_CONVERSATION: (conversationId) => `/chat/conversations/${conversationId}/continue`,
+  
+  // Other endpoints (kept for compatibility but not used in localStorage version)
+  GET_CONVERSATIONS: '/chat/conversations',
+  GET_CONVERSATION: (conversationId) => `/chat/conversations/${conversationId}`,
+  DELETE_CONVERSATION: (conversationId) => `/chat/conversations/${conversationId}`,
+  
+  // Functional endpoints
+  GET_MODELS: '/chat/models',
+  GET_STATS: '/chat/stats',
+  
+  // Health
   HEALTH: '/health',
-  STATUS: '/chat/status',
-  CONVERSATIONS: '/chat/conversations'
 };
 
-// Main chatbot API
+// Chatbot API methods - localStorage version
 export const chatbotAPI = {
-  /**
-   * FIXED: Send message with proper field mapping
-   */
-  async sendMessage({ content, conversationId = null, intent = null, metadata = {} }) {
+  // Send a new message (primary endpoint for localStorage version)
+  sendMessage: async (messageData) => {
     try {
-      // Validate input
-      if (!content || typeof content !== 'string' || content.trim().length === 0) {
-        throw new ChatbotError('Message content cannot be empty', 'INVALID_INPUT');
-      }
-      
-      if (content.length > 4000) {
-        throw new ChatbotError('Message too long. Please limit to 4000 characters.', 'MESSAGE_TOO_LONG');
-      }
-      
-      // FIXED: Use snake_case for backend (conversation_id)
-      const payload = {
-        content: content.trim(),
-        metadata: {
-          source: 'web_app',
-          ...metadata
-        }
-      };
-      
-      // Add optional fields using backend field names
-      if (conversationId !== null && conversationId !== undefined) {
-        payload.conversation_id = conversationId;
-      }
-      
-      if (intent) {
-        payload.intent = intent;
-      }
-      
-      const response = await chatbotClient.post(ENDPOINTS.CHAT, payload);
-      const data = response.data;
-      
-      if (!data.reply) {
-        throw new ChatbotError('Invalid response from chatbot service', 'INVALID_RESPONSE');
-      }
-      
-      // FIXED: Map backend fields (snake_case) to frontend fields (camelCase)
-      return {
-        success: true,
-        data: {
-          reply: data.reply,
-          conversationId: data.conversation_id, // snake_case → camelCase
-          messageId: data.message_id,           // snake_case → camelCase
-          intent: data.intent,
-          processingTime: data.processing_time, // snake_case → camelCase
-          metadata: data.metadata || {},
-          timestamp: new Date().toISOString()
-        }
-      };
-      
-    } catch (error) {
-      if (error instanceof ChatbotError) {
-        throw error;
-      }
-      
-      if (error.response?.status === 401) {
-        const detail = error.response.data?.detail || 'Authentication required';
-        throw new ChatbotError(detail, 'UNAUTHORIZED');
-      }
-      
-      if (error.response?.status === 422) {
-        const detail = error.response.data?.detail;
-        let message = 'Invalid request format';
-        
-        if (Array.isArray(detail)) {
-          const fieldErrors = detail.map(err => {
-            const field = err.loc?.join('.') || 'unknown';
-            return `${field}: ${err.msg}`;
-          }).join(', ');
-          message = `Validation failed - ${fieldErrors}`;
-        } else if (typeof detail === 'string') {
-          message = detail;
-        }
-        
-        throw new ChatbotError(message, 'VALIDATION_ERROR', { details: detail });
-      }
-      
-      if (error.response?.status === 429) {
-        const errorData = error.response.data;
-        const retryAfter = errorData?.retry_after || 60;
-        const message = errorData?.message || 'Too many requests. Please wait before sending more messages.';
-        throw new ChatbotError(message, 'RATE_LIMITED', { retryAfter });
-      }
-      
-      if (error.response?.status >= 500) {
-        const errorMessage = error.response.data?.error || 'Chatbot service temporarily unavailable';
-        throw new ChatbotError(`${errorMessage}. Please try again.`, 'SERVICE_ERROR');
-      }
-      
-      if (error.code === 'ECONNABORTED') {
-        throw new ChatbotError(
-          'Request timed out. The AI is taking too long to respond.',
-          'TIMEOUT'
-        );
-      }
-      
-      if (!error.response) {
-        throw new ChatbotError(
-          'Unable to connect to chatbot service. Check your internet connection.',
-          'NETWORK_ERROR'
-        );
-      }
-      
-      const errorMessage = error.response?.data?.error || 
-                          error.response?.data?.detail || 
-                          error.response?.data?.message ||
-                          error.message || 
-                          'An unexpected error occurred';
-      
-      throw new ChatbotError(errorMessage, 'UNKNOWN_ERROR');
-    }
-  },
-
-  async getHealth() {
-    try {
-      const response = await chatbotClient.get(ENDPOINTS.HEALTH);
-      return { success: true, data: response.data };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data?.error || error.message || 'Health check failed',
-        status: error.response?.status || 'network_error'
-      };
-    }
-  },
-
-  async getStatus() {
-    try {
-      const statusClient = axios.create({
-        baseURL: chatbotClient.defaults.baseURL,
-        timeout: 10000
+      const response = await chatbotClient.post(CHATBOT_ENDPOINTS.SEND_MESSAGE, {
+        message: messageData.message,
+        conversation_id: messageData.conversationId,
+        context: messageData.context || [], // Frontend provides conversation context
+        model: messageData.model || 'gpt-4o-mini',
+        temperature: messageData.temperature || 0.7,
+        max_tokens: messageData.maxTokens || 1000,
+        system_prompt: messageData.systemPrompt,
       });
-      
-      const response = await statusClient.get(ENDPOINTS.STATUS);
-      return { success: true, data: response.data };
+      return response.data;
     } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data?.error || error.message || 'Status check failed',
-        status: error.response?.status || 'network_error'
-      };
+      console.error('Error sending message:', error);
+      throw error;
     }
   },
 
-  async getConversations() {
+  // Continue an existing conversation (uses same endpoint as sendMessage in localStorage version)
+  continueConversation: async (conversationId, messageData) => {
     try {
-      const response = await chatbotClient.get(ENDPOINTS.CONVERSATIONS);
-      return { success: true, data: response.data };
+      const response = await chatbotClient.post(
+        CHATBOT_ENDPOINTS.CONTINUE_CONVERSATION(conversationId), 
+        {
+          message: messageData.message,
+          context: messageData.context || [], // Frontend provides context
+          model: messageData.model || 'gpt-4o-mini',
+          temperature: messageData.temperature || 0.7,
+          max_tokens: messageData.maxTokens || 1000,
+          system_prompt: messageData.systemPrompt,
+        }
+      );
+      return response.data;
     } catch (error) {
-      if (error.response?.status === 200 || error.response?.data?.message?.includes('coming soon')) {
-        return {
-          success: true,
-          data: {
-            user_id: null,
-            conversations: [],
-            message: 'Conversation history feature coming soon'
+      console.error('Error continuing conversation:', error);
+      throw error;
+    }
+  },
+
+  // Get all user conversations (NOT USED in localStorage version - returns empty)
+  getConversations: async () => {
+    try {
+      // In localStorage version, this returns empty array from backend
+      // Frontend manages conversations via localStorage
+      console.warn('getConversations called but not functional in localStorage version');
+      return [];
+    } catch (error) {
+      console.error('Error getting conversations:', error);
+      return [];
+    }
+  },
+
+  // Get specific conversation history (NOT USED in localStorage version)
+  getConversation: async (conversationId) => {
+    try {
+      // In localStorage version, frontend manages conversation history
+      console.warn('getConversation called but not functional in localStorage version');
+      throw new Error('Conversations managed by localStorage on frontend');
+    } catch (error) {
+      console.error('Error getting conversation:', error);
+      throw error;
+    }
+  },
+
+  // Delete a conversation (NOT USED in localStorage version - frontend handles)
+  deleteConversation: async (conversationId) => {
+    try {
+      // In localStorage version, deletion is handled by frontend
+      console.warn('deleteConversation called but handled by frontend in localStorage version');
+      return { success: true, note: 'Handled by frontend localStorage' };
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Get available AI models (FUNCTIONAL)
+  getModels: async () => {
+    try {
+      const response = await chatbotClient.get(CHATBOT_ENDPOINTS.GET_MODELS);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting models:', error);
+      // Return default models if API fails
+      return {
+        models: [
+          {
+            id: "gpt-3.5-turbo",
+            name: "GPT-3.5 Turbo",
+            description: "Fast and efficient model for general conversations",
+            max_tokens: 4096,
+            available: true
+          },
+          {
+            id: "gpt-4o-mini", 
+            name: "GPT-4o Mini",
+            description: "Efficient and capable model for coding and technical questions",
+            max_tokens: 16384,
+            available: true
           }
-        };
-      }
-      
-      return {
-        success: false,
-        error: error.response?.data?.error || error.message || 'Failed to load conversations'
+        ],
+        default_model: "gpt-4o-mini"
       };
     }
   },
 
-  async deleteConversation(conversationId) {
+  // Get user chat statistics (LIMITED in localStorage version)
+  getStats: async () => {
     try {
-      const response = await chatbotClient.delete(`/chat/conversations/${conversationId}`);
-      return { success: true, data: response.data };
+      const response = await chatbotClient.get(CHATBOT_ENDPOINTS.GET_STATS);
+      return response.data;
     } catch (error) {
+      console.error('Error getting stats:', error);
       return {
-        success: false,
-        error: error.response?.data?.error || error.message || 'Failed to delete conversation'
+        user_id: null,
+        total_conversations: 0,
+        total_messages: 0,
+        recent_conversation: null,
+        storage_type: "localStorage"
+      };
+    }
+  },
+
+  // Health check
+  healthCheck: async () => {
+    try {
+      const response = await chatbotClient.get(CHATBOT_ENDPOINTS.HEALTH);
+      return response.data;
+    } catch (error) {
+      console.error('Error checking health:', error);
+      throw error;
+    }
+  },
+};
+
+// Helper functions for message formatting (same as before)
+export const MessageHelpers = {
+  // Format message for display
+  formatMessage: (message) => {
+    if (!message) return '';
+    
+    // Basic markdown-like formatting
+    let formatted = message
+      .replace(/```(\w+)?\n([\s\S]*?)\n```/g, '<pre><code class="language-$1">$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+    
+    return formatted;
+  },
+
+  // Extract code blocks from message
+  extractCodeBlocks: (message) => {
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)\n```/g;
+    const blocks = [];
+    let match;
+    
+    while ((match = codeBlockRegex.exec(message)) !== null) {
+      blocks.push({
+        language: match[1] || 'text',
+        code: match[2],
+      });
+    }
+    
+    return blocks;
+  },
+
+  // Generate conversation title from first message
+  generateTitle: (firstMessage) => {
+    if (!firstMessage) return 'New Conversation';
+    
+    // Take first 50 characters and clean up
+    let title = firstMessage.substring(0, 50).trim();
+    
+    // Remove markdown and special characters
+    title = title
+      .replace(/[#*`_]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (firstMessage.length > 50) {
+      title += '...';
+    }
+    
+    return title || 'New Conversation';
+  },
+
+  // Validate message input
+  validateMessage: (message) => {
+    if (!message || typeof message !== 'string') {
+      return { valid: false, error: 'Message is required' };
+    }
+    
+    if (message.trim().length === 0) {
+      return { valid: false, error: 'Message cannot be empty' };
+    }
+    
+    if (message.length > 10000) {
+      return { valid: false, error: 'Message is too long (max 10,000 characters)' };
+    }
+    
+    return { valid: true };
+  },
+
+  // Create message object for localStorage
+  createMessage: (role, content, conversationId, metadata = {}) => {
+    return {
+      id: `${role}_${conversationId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      role,
+      content,
+      timestamp: new Date().toISOString(),
+      conversationId,
+      ...metadata
+    };
+  },
+
+  // Create conversation object for localStorage
+  createConversation: (conversationId, firstMessage, title = null) => {
+    const now = new Date().toISOString();
+    return {
+      conversation_id: conversationId,
+      title: title || MessageHelpers.generateTitle(firstMessage),
+      created_at: now,
+      updated_at: now,
+      message_count: 0,
+      messages: [],
+      status: 'active'
+    };
+  }
+};
+
+// localStorage-specific utilities
+export const LocalStorageUtils = {
+  // Get conversations from localStorage
+  getConversations: (userId) => {
+    try {
+      const key = `codementorx_conversations_${userId}`;
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Failed to load conversations from localStorage:', error);
+      return [];
+    }
+  },
+
+  // Save conversations to localStorage
+  saveConversations: (conversations, userId) => {
+    try {
+      const key = `codementorx_conversations_${userId}`;
+      localStorage.setItem(key, JSON.stringify(conversations));
+      return true;
+    } catch (error) {
+      console.error('Failed to save conversations to localStorage:', error);
+      return false;
+    }
+  },
+
+  // Get current conversation from localStorage
+  getCurrentConversation: (userId) => {
+    try {
+      const key = `codementorx_current_conversation_${userId}`;
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+      console.error('Failed to load current conversation:', error);
+      return null;
+    }
+  },
+
+  // Save current conversation to localStorage
+  saveCurrentConversation: (conversation, userId) => {
+    try {
+      const key = `codementorx_current_conversation_${userId}`;
+      if (conversation) {
+        localStorage.setItem(key, JSON.stringify(conversation));
+      } else {
+        localStorage.removeItem(key);
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to save current conversation:', error);
+      return false;
+    }
+  },
+
+  // Clear all user data from localStorage
+  clearUserData: (userId) => {
+    try {
+      const keys = [
+        `codementorx_conversations_${userId}`,
+        `codementorx_current_conversation_${userId}`,
+        `codementorx_chat_settings_${userId}`
+      ];
+      keys.forEach(key => localStorage.removeItem(key));
+      return true;
+    } catch (error) {
+      console.error('Failed to clear user data:', error);
+      return false;
+    }
+  },
+
+  // Get storage stats
+  getStorageStats: (userId) => {
+    try {
+      const conversations = LocalStorageUtils.getConversations(userId);
+      const totalMessages = conversations.reduce((sum, conv) => sum + (conv.message_count || 0), 0);
+      const storageSize = localStorage.length;
+      
+      return {
+        total_conversations: conversations.length,
+        total_messages: totalMessages,
+        storage_entries: storageSize,
+        last_updated: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Failed to get storage stats:', error);
+      return {
+        total_conversations: 0,
+        total_messages: 0,
+        storage_entries: 0,
+        error: error.message
       };
     }
   }
 };
 
-export { ChatbotError };
-
-export const getRateLimitInfo = () => ({
-  remaining: Math.max(0, rateLimitTracker.maxPerMinute - rateLimitTracker.requests.length),
-  resetTime: Date.now() + 60000,
-  maxPerMinute: rateLimitTracker.maxPerMinute
-});
-
-export const checkServiceConnectivity = async () => {
-  try {
-    const result = await chatbotAPI.getStatus();
-    return {
-      isOnline: result.success,
-      status: result.success ? 'healthy' : 'down',
-      lastChecked: new Date().toISOString(),
-      error: result.error || null
-    };
-  } catch (error) {
-    return {
-      isOnline: false,
-      status: 'down', 
-      lastChecked: new Date().toISOString(),
-      error: error.message
-    };
-  }
-};
+// Export for testing purposes
+export { chatbotClient };
 
 export default chatbotAPI;

@@ -1,534 +1,461 @@
 """
-Utility functions for JWT verification, Redis connection, and logging
-Ensures seamless integration with Django JWT authentication
+Utility functions for FastAPI Chatbot Service
+JWT token verification and helper functions
 """
-
-import asyncio
-import redis.asyncio as redis
-import structlog
+import os
+import jwt
 import logging
-import sys
-from typing import Optional, Dict, Any
-from contextvars import ContextVar
+import re
+import uuid
 from datetime import datetime, timezone
-from jose import JWTError, jwt
-from fastapi import HTTPException, status
-from decouple import config
+from typing import Dict, Any, Optional, List
+from models import UserInfo
 
-# Context variable for correlation ID
-correlation_id_var: ContextVar[str] = ContextVar('correlation_id', default='')
+# Configure logging
+logger = logging.getLogger(__name__)
 
-# Configuration - FIXED: Must match Django settings exactly
-JWT_SECRET_KEY = config('JWT_SECRET_KEY')
-JWT_ALGORITHM = config('JWT_ALGORITHM', default='HS256')
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+# JWT Configuration
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
-# Redis client instance
-_redis_client: Optional[redis.Redis] = None
+if not JWT_SECRET_KEY:
+    raise ValueError("JWT_SECRET_KEY environment variable is required")
 
-def setup_logging():
-    """Configure structured logging with enhanced formatting"""
-    
-    def add_correlation_id(_, __, event_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """Add correlation ID to log entries"""
-        correlation_id = correlation_id_var.get()
-        if correlation_id:
-            event_dict["correlation_id"] = correlation_id
-        return event_dict
-    
-    def add_service_context(_, __, event_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """Add service context to logs"""
-        event_dict["service"] = "chatbot-api"
-        event_dict["version"] = "1.0.0"
-        return event_dict
-    
-    # Configure structlog
-    structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            add_correlation_id,
-            add_service_context,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            # Use JSON in production, console in development
-            structlog.processors.JSONRenderer() 
-            if not config('DEBUG', default=False, cast=bool) 
-            else structlog.dev.ConsoleRenderer(colors=True)
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-    
-    # Configure standard logging
-    log_level = config('LOG_LEVEL', default='INFO')
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=getattr(logging, log_level.upper()),
-    )
-    
-    # Reduce noise from other libraries
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("redis").setLevel(logging.WARNING)
 
-def verify_jwt_token(token: str) -> Dict[str, Any]:
+def verify_jwt_token(token: str) -> UserInfo:
     """
-    Verify JWT token issued by Django with enhanced validation
-    Returns user information from token payload
+    Verify JWT token and extract user information
+    Compatible with Django REST Framework SimpleJWT tokens
     """
-    logger = structlog.get_logger(__name__)
-    
     try:
-        # FIXED: Validate token format first
-        if not token or not isinstance(token, str):
-            logger.warning("Invalid token format", token_type=type(token))
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token format"
-            )
-        
-        # Decode JWT token using same secret as Django
+        # Decode the JWT token
         payload = jwt.decode(
             token,
             JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM]
+            algorithms=[JWT_ALGORITHM],
+            options={"verify_exp": True}
         )
         
-        logger.debug("JWT payload decoded", keys=list(payload.keys()))
+        # Extract user information from payload
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise ValueError("Invalid token: missing user_id")
         
-        # ENHANCED: Validate required fields
-        required_fields = ['user_id', 'exp']
-        missing_fields = [field for field in required_fields if field not in payload]
-        if missing_fields:
-            logger.warning("Missing required JWT fields", missing_fields=missing_fields)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid token: missing fields {missing_fields}"
-            )
+        # Create UserInfo object
+        user_info = UserInfo(
+            user_id=int(user_id),
+            email=payload.get("email", ""),
+            username=payload.get("username", ""),
+            full_name=payload.get("full_name", ""),
+            role=payload.get("role", "user"),
+            is_verified=payload.get("is_verified", False)
+        )
         
-        # Validate token expiration
-        exp = payload.get('exp')
-        if exp:
-            try:
-                exp_datetime = datetime.fromtimestamp(exp, tz=timezone.utc)
-                current_time = datetime.now(timezone.utc)
-                
-                if exp_datetime <= current_time:
-                    logger.warning(
-                        "Token has expired", 
-                        exp_time=exp_datetime.isoformat(),
-                        current_time=current_time.isoformat()
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token has expired"
-                    )
-                
-                # Log time until expiration for debugging
-                time_until_exp = (exp_datetime - current_time).total_seconds()
-                logger.debug("Token expiration validated", seconds_until_exp=time_until_exp)
-                
-            except (ValueError, OSError) as e:
-                logger.warning("Invalid expiration timestamp", exp=exp, error=str(e))
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token expiration"
-                )
+        logger.info(f"JWT token verified for user {user_id}")
+        return user_info
         
-        # Extract and validate user information
-        user_id = payload.get('user_id')
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token has expired")
+        raise ValueError("Token has expired")
+    
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token: {e}")
+        raise ValueError(f"Invalid token: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"JWT verification error: {e}")
+        raise ValueError(f"Token verification failed: {str(e)}")
+
+
+def extract_bearer_token(authorization_header: str) -> str:
+    """
+    Extract Bearer token from Authorization header
+    """
+    try:
+        if not authorization_header:
+            raise ValueError("Authorization header is missing")
         
-        # FIXED: Handle both string and integer user IDs
+        parts = authorization_header.split()
+        
+        if len(parts) != 2:
+            raise ValueError("Invalid authorization header format")
+        
+        scheme, token = parts
+        
+        if scheme.lower() != "bearer":
+            raise ValueError("Invalid authorization scheme")
+        
+        return token
+        
+    except Exception as e:
+        logger.error(f"Error extracting bearer token: {e}")
+        raise ValueError(f"Invalid authorization header: {str(e)}")
+
+
+def format_datetime(dt: datetime) -> str:
+    """
+    Format datetime for consistent API responses
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+def parse_datetime(dt_string: str) -> datetime:
+    """
+    Parse datetime string to datetime object
+    """
+    try:
+        # Try parsing with timezone info
+        return datetime.fromisoformat(dt_string.replace('Z', '+00:00'))
+    except ValueError:
         try:
-            user_id = int(user_id)
-        except (ValueError, TypeError):
-            logger.warning("Invalid user_id format", user_id=user_id, user_id_type=type(user_id))
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token: invalid user_id"
-            )
-        
-        logger.info("JWT token verified successfully", user_id=user_id)
-        
-        return {
-            'user_id': user_id,
-            'username': payload.get('username', ''),
-            'email': payload.get('email', ''),
-            'role': payload.get('role', 'user'),
-            'exp': exp,
-            'iat': payload.get('iat'),
-            'token_type': payload.get('token_type', 'access'),
-            # Additional fields that might be present
-            'is_staff': payload.get('is_staff', False),
-            'is_superuser': payload.get('is_superuser', False),
-            'first_name': payload.get('first_name', ''),
-            'last_name': payload.get('last_name', ''),
-        }
-        
-    except JWTError as e:
-        logger.warning("JWT verification failed", error=str(e), error_type=type(e).__name__)
-        # Determine specific JWT error type for better error messages
-        if "signature" in str(e).lower():
-            detail = "Invalid token signature"
-        elif "expired" in str(e).lower():
-            detail = "Token has expired"
-        elif "decode" in str(e).lower():
-            detail = "Token decode failed"
-        else:
-            detail = "Invalid token"
-            
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=detail
-        )
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(
-            "Unexpected error during JWT verification", 
-            error=str(e), 
-            error_type=type(e).__name__
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token verification failed"
-        )
+            # Try parsing without timezone info
+            dt = datetime.fromisoformat(dt_string)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError as e:
+            logger.error(f"Failed to parse datetime: {dt_string}, error: {e}")
+            raise ValueError(f"Invalid datetime format: {dt_string}")
 
-async def get_redis_client() -> Optional[redis.Redis]:
-    """Get Redis client instance with enhanced connection handling"""
-    global _redis_client
-    
-    logger = structlog.get_logger(__name__)
-    
-    if _redis_client is None:
-        try:
-            # ENHANCED: Parse Redis URL and add connection parameters
-            _redis_client = redis.from_url(
-                REDIS_URL,
-                encoding="utf-8",
-                decode_responses=True,
-                max_connections=20,
-                retry_on_timeout=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                health_check_interval=30
-            )
-            
-            # Test connection with timeout
-            await asyncio.wait_for(_redis_client.ping(), timeout=5.0)
-            logger.info("Redis client initialized successfully")
-            
-        except asyncio.TimeoutError:
-            logger.error("Redis connection timeout")
-            _redis_client = None
-        except Exception as e:
-            logger.error("Failed to initialize Redis client", error=str(e))
-            _redis_client = None
-    
-    return _redis_client
 
-async def close_redis_connection():
-    """Close Redis connection gracefully"""
-    global _redis_client
+def sanitize_string(text: str, max_length: int = 1000) -> str:
+    """
+    Sanitize string input for security
+    """
+    if not isinstance(text, str):
+        text = str(text)
     
-    logger = structlog.get_logger(__name__)
+    # Remove null bytes and control characters
+    text = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')
     
-    if _redis_client:
-        try:
-            await _redis_client.close()
-            logger.info("Redis connection closed successfully")
-        except Exception as e:
-            logger.error("Error closing Redis connection", error=str(e))
-        finally:
-            _redis_client = None
+    # Trim whitespace
+    text = text.strip()
+    
+    # Limit length
+    if len(text) > max_length:
+        text = text[:max_length].rstrip() + "..."
+    
+    return text
 
-async def cache_set(key: str, value: str, expire: int = 3600) -> bool:
-    """Set cache value with expiration and error handling"""
-    logger = structlog.get_logger(__name__)
-    
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            logger.warning("Redis client not available for cache_set")
-            return False
-            
-        await redis_client.setex(key, expire, value)
-        logger.debug("Cache set successful", key=key, expire=expire)
-        return True
-        
-    except Exception as e:
-        logger.error("Cache set failed", key=key, error=str(e))
+
+def validate_conversation_id(conversation_id: str) -> bool:
+    """
+    Validate conversation ID format
+    """
+    if not conversation_id:
         return False
-
-async def cache_get(key: str) -> Optional[str]:
-    """Get cache value with error handling"""
-    logger = structlog.get_logger(__name__)
     
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            logger.debug("Redis client not available for cache_get")
-            return None
-            
-        value = await redis_client.get(key)
-        logger.debug("Cache get", key=key, found=value is not None)
-        return value
-        
-    except Exception as e:
-        logger.error("Cache get failed", key=key, error=str(e))
-        return None
-
-async def rate_limit_check(user_id: int, window: int = 60, limit: int = 100) -> bool:
-    """
-    Enhanced rate limiting with sliding window algorithm
-    Returns True if request is allowed, False if rate limited
-    """
-    logger = structlog.get_logger(__name__)
-    
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            logger.warning("Redis not available, allowing request")
-            return True
-        
-        key = f"rate_limit:user:{user_id}"
-        now = datetime.now().timestamp()
-        
-        # Use transaction for atomicity
-        async with redis_client.pipeline(transaction=True) as pipe:
-            # Remove expired entries (older than window)
-            pipe.zremrangebyscore(key, 0, now - window)
-            
-            # Count current requests in window
-            pipe.zcard(key)
-            
-            # Add current request timestamp
-            pipe.zadd(key, {str(now): now})
-            
-            # Set expiration for cleanup
-            pipe.expire(key, window + 10)
-            
-            results = await pipe.execute()
-            
-        current_count = results[1]  # Result from zcard
-        
-        is_allowed = current_count < limit
-        
-        if not is_allowed:
-            logger.warning(
-                "Rate limit exceeded",
-                user_id=user_id,
-                current_count=current_count,
-                limit=limit,
-                window=window
-            )
-        else:
-            logger.debug(
-                "Rate limit check passed",
-                user_id=user_id,
-                current_count=current_count,
-                limit=limit
-            )
-        
-        return is_allowed
-        
-    except Exception as e:
-        logger.error("Rate limit check failed", user_id=user_id, error=str(e))
-        # Allow request if rate limiting fails (fail open)
-        return True
-
-def extract_intent(content: str) -> str:
-    """
-    Enhanced intent extraction from user message
-    In production, replace with proper NLP model
-    """
-    if not content or not isinstance(content, str):
-        return 'general'
-    
-    content_lower = content.lower().strip()
-    
-    # Enhanced coding keywords with weighted scoring
-    coding_keywords = [
-        'code', 'coding', 'programming', 'develop', 'developer', 'software',
-        'python', 'javascript', 'react', 'django', 'fastapi', 'nodejs', 'express',
-        'sql', 'database', 'mysql', 'postgresql', 'mongodb', 'redis',
-        'algorithm', 'function', 'class', 'method', 'variable', 'array', 'object',
-        'loop', 'condition', 'if', 'else', 'try', 'catch', 'exception',
-        'api', 'endpoint', 'route', 'middleware', 'authentication', 'jwt',
-        'debug', 'error', 'bug', 'fix', 'troubleshoot', 'stack trace',
-        'framework', 'library', 'package', 'import', 'export',
-        'html', 'css', 'scss', 'tailwind', 'bootstrap',
-        'git', 'github', 'version control', 'commit', 'merge',
-        'docker', 'kubernetes', 'deployment', 'ci/cd', 'testing'
-    ]
-    
-    # Translation keywords
-    translation_keywords = [
-        'translate', 'translation', 'language', 'lingua', 'idioma',
-        'français', 'french', 'spanish', 'español', 'deutsch', 'german',
-        'chinese', 'mandarin', 'japanese', 'hindi', 'arabic', 'portuguese',
-        'italian', 'russian', 'korean', 'turkish', 'dutch', 'swedish',
-        'meaning', 'interpret', 'localize', 'localization'
-    ]
-    
-    # Count matches for each intent
-    coding_score = sum(1 for keyword in coding_keywords if keyword in content_lower)
-    translation_score = sum(1 for keyword in translation_keywords if keyword in content_lower)
-    
-    # Enhanced logic with threshold
-    if coding_score >= 1:
-        return 'coding'
-    elif translation_score >= 1:
-        return 'translation'
-    
-    # Check for specific patterns
-    if any(pattern in content_lower for pattern in [
-        'how to', 'how do i', 'how can i', 'help me', 'explain',
-        'what is', 'what are', 'why does', 'why is'
-    ]):
-        # These could be coding questions even without explicit keywords
-        if any(tech_term in content_lower for tech_term in [
-            'implement', 'create', 'build', 'make', 'write',
-            'syntax', 'logic', 'structure', 'pattern'
-        ]):
-            return 'coding'
-    
-    return 'general'
-
-# ADDITIONAL: Cache utilities for better performance
-async def cache_exists(key: str) -> bool:
-    """Check if cache key exists"""
-    logger = structlog.get_logger(__name__)
-    
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            return False
-            
-        exists = await redis_client.exists(key)
-        return bool(exists)
-        
-    except Exception as e:
-        logger.error("Cache exists check failed", key=key, error=str(e))
+    # Check length (UUIDs are typically 36 characters)
+    if len(conversation_id) > 100:
         return False
-
-async def cache_delete(key: str) -> bool:
-    """Delete cache key"""
-    logger = structlog.get_logger(__name__)
     
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            return False
-            
-        deleted = await redis_client.delete(key)
-        logger.debug("Cache delete", key=key, deleted=bool(deleted))
-        return bool(deleted)
-        
-    except Exception as e:
-        logger.error("Cache delete failed", key=key, error=str(e))
-        return False
+    # Check for valid characters (alphanumeric, hyphens, underscores)
+    pattern = r'^[a-zA-Z0-9_-]+$'
+    return bool(re.match(pattern, conversation_id))
 
-async def cache_increment(key: str, expire: int = 3600) -> int:
-    """Increment cache counter"""
-    logger = structlog.get_logger(__name__)
-    
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            return 0
-            
-        # Use pipeline for atomicity
-        async with redis_client.pipeline(transaction=True) as pipe:
-            pipe.incr(key)
-            pipe.expire(key, expire)
-            results = await pipe.execute()
-            
-        count = results[0]
-        logger.debug("Cache increment", key=key, count=count)
-        return int(count)
-        
-    except Exception as e:
-        logger.error("Cache increment failed", key=key, error=str(e))
-        return 0
 
-# Health check utilities
-async def check_redis_health() -> Dict[str, Any]:
-    """Comprehensive Redis health check"""
-    logger = structlog.get_logger(__name__)
+def generate_conversation_id() -> str:
+    """
+    Generate a unique conversation ID
+    """
+    return str(uuid.uuid4())
+
+
+def get_client_ip(headers: Dict[str, str]) -> str:
+    """
+    Extract client IP from request headers
+    """
+    # Check X-Forwarded-For header first
+    forwarded_for = headers.get('x-forwarded-for', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
     
-    health_info = {
-        "status": "unknown",
-        "latency": None,
-        "memory_usage": None,
-        "connected_clients": None,
-        "error": None
+    # Check X-Real-IP header
+    real_ip = headers.get('x-real-ip', '')
+    if real_ip:
+        return real_ip.strip()
+    
+    # Fallback to remote address
+    return headers.get('x-forwarded-host', 'unknown')
+
+
+def create_error_response(message: str, detail: Optional[str] = None, status_code: int = 400) -> Dict[str, Any]:
+    """
+    Create standardized error response
+    """
+    return {
+        "error": message,
+        "detail": detail,
+        "status_code": status_code,
+        "timestamp": format_datetime(datetime.now(timezone.utc))
+    }
+
+
+def log_request(method: str, url: str, user_id: Optional[int] = None, ip: Optional[str] = None):
+    """
+    Log API request for monitoring
+    """
+    log_data = {
+        "method": method,
+        "url": url,
+        "timestamp": format_datetime(datetime.now(timezone.utc))
     }
     
-    try:
-        redis_client = await get_redis_client()
-        if not redis_client:
-            health_info["status"] = "unavailable"
-            health_info["error"] = "Redis client not initialized"
-            return health_info
-        
-        # Test latency
-        import time
-        start = time.time()
-        await redis_client.ping()
-        latency = round((time.time() - start) * 1000, 2)  # Convert to ms
-        
-        # Get Redis info
-        info = await redis_client.info()
-        
-        health_info.update({
-            "status": "healthy",
-            "latency": f"{latency}ms",
-            "memory_usage": info.get("used_memory_human", "unknown"),
-            "connected_clients": info.get("connected_clients", 0),
-            "redis_version": info.get("redis_version", "unknown")
-        })
-        
-    except Exception as e:
-        health_info.update({
-            "status": "unhealthy",
-            "error": str(e)
-        })
-        logger.error("Redis health check failed", error=str(e))
+    if user_id:
+        log_data["user_id"] = user_id
     
-    return health_info
+    if ip:
+        log_data["ip"] = ip
+    
+    logger.info(f"API Request: {log_data}")
 
-# JWT utilities for token introspection
-def decode_jwt_without_verification(token: str) -> Dict[str, Any]:
-    """
-    Decode JWT token without verification (for debugging/introspection)
-    WARNING: Only use for non-security purposes!
-    """
-    try:
-        # Decode without verification
-        payload = jwt.decode(token, options={"verify_signature": False})
-        return payload
-    except Exception as e:
-        logger = structlog.get_logger(__name__)
-        logger.warning("JWT decode without verification failed", error=str(e))
-        return {}
 
-def get_jwt_expiry_time(token: str) -> Optional[datetime]:
-    """Get JWT token expiry time without full verification"""
-    try:
-        payload = decode_jwt_without_verification(token)
-        exp = payload.get('exp')
-        if exp:
-            return datetime.fromtimestamp(exp, tz=timezone.utc)
-        return None
-    except Exception:
-        return None
+def check_rate_limit(user_id: int, action: str = "chat", limit: int = 100, window: int = 3600) -> Dict[str, Any]:
+    """
+    Simple rate limiting check (would need Redis implementation for production)
+    Returns dict with 'allowed' boolean and 'remaining' count
+    """
+    # This is a placeholder - in production, you'd implement this with Redis
+    # For now, always return allowed with dummy remaining count
+    return {
+        "allowed": True,
+        "remaining": limit - 1,
+        "reset_time": datetime.now(timezone.utc).timestamp() + window
+    }
+
+
+def truncate_text(text: str, max_length: int = 100, suffix: str = "...") -> str:
+    """
+    Truncate text to specified length with suffix
+    """
+    if len(text) <= max_length:
+        return text
+    
+    return text[:max_length - len(suffix)].rstrip() + suffix
+
+
+def is_valid_email(email: str) -> bool:
+    """
+    Basic email validation
+    """
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+def clean_html(text: str) -> str:
+    """
+    Remove HTML tags from text (basic sanitization)
+    """
+    clean_pattern = re.compile('<.*?>')
+    return re.sub(clean_pattern, '', text)
+
+
+def validate_message_content(content: str) -> Dict[str, Any]:
+    """
+    Validate chat message content
+    """
+    if not content or not isinstance(content, str):
+        return {
+            "valid": False,
+            "error": "Message content is required and must be a string"
+        }
+    
+    content = content.strip()
+    
+    if len(content) == 0:
+        return {
+            "valid": False,
+            "error": "Message content cannot be empty"
+        }
+    
+    if len(content) > 10000:
+        return {
+            "valid": False,
+            "error": "Message content is too long (maximum 10,000 characters)"
+        }
+    
+    # Check for potentially harmful content patterns
+    suspicious_patterns = [
+        r'<script[^>]*>',
+        r'javascript:',
+        r'vbscript:',
+        r'data:text/html',
+        r'eval\s*\(',
+    ]
+    
+    for pattern in suspicious_patterns:
+        if re.search(pattern, content, re.IGNORECASE):
+            return {
+                "valid": False,
+                "error": "Message contains potentially harmful content"
+            }
+    
+    return {
+        "valid": True,
+        "cleaned_content": sanitize_string(content, 10000)
+    }
+
+
+def format_token_usage(usage_data: Optional[Dict[str, int]]) -> Dict[str, Any]:
+    """
+    Format token usage data for consistent API responses
+    """
+    if not usage_data:
+        return {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_estimate": 0.0
+        }
+    
+    prompt_tokens = usage_data.get("prompt_tokens", 0)
+    completion_tokens = usage_data.get("completion_tokens", 0)
+    total_tokens = usage_data.get("total_tokens", prompt_tokens + completion_tokens)
+    
+    # Rough cost estimate (you'd replace with actual pricing)
+    cost_per_1k_tokens = 0.002  # Example pricing
+    cost_estimate = (total_tokens / 1000) * cost_per_1k_tokens
+    
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost_estimate": round(cost_estimate, 6)
+    }
+
+
+def extract_mentions(text: str) -> List[str]:
+    """
+    Extract @mentions from text
+    """
+    mention_pattern = r'@(\w+)'
+    mentions = re.findall(mention_pattern, text)
+    return list(set(mentions))  # Remove duplicates
+
+
+def extract_hashtags(text: str) -> List[str]:
+    """
+    Extract #hashtags from text
+    """
+    hashtag_pattern = r'#(\w+)'
+    hashtags = re.findall(hashtag_pattern, text)
+    return list(set(hashtags))  # Remove duplicates
+
+
+def calculate_message_complexity(text: str) -> Dict[str, Any]:
+    """
+    Calculate basic complexity metrics for a message
+    """
+    if not text:
+        return {
+            "character_count": 0,
+            "word_count": 0,
+            "sentence_count": 0,
+            "avg_word_length": 0.0,
+            "complexity_score": 0.0
+        }
+    
+    # Basic metrics
+    char_count = len(text)
+    words = text.split()
+    word_count = len(words)
+    sentences = re.split(r'[.!?]+', text)
+    sentence_count = len([s for s in sentences if s.strip()])
+    
+    # Average word length
+    avg_word_length = sum(len(word) for word in words) / word_count if word_count > 0 else 0
+    
+    # Simple complexity score (0-100)
+    complexity_score = min(100, (avg_word_length * 10) + (sentence_count * 5))
+    
+    return {
+        "character_count": char_count,
+        "word_count": word_count,
+        "sentence_count": sentence_count,
+        "avg_word_length": round(avg_word_length, 2),
+        "complexity_score": round(complexity_score, 2)
+    }
+
+
+def mask_sensitive_data(data: Dict[str, Any], sensitive_keys: List[str] = None) -> Dict[str, Any]:
+    """
+    Mask sensitive data in dictionaries for logging
+    """
+    if sensitive_keys is None:
+        sensitive_keys = ['password', 'token', 'key', 'secret', 'api_key']
+    
+    masked_data = {}
+    for key, value in data.items():
+        if any(sensitive_key in key.lower() for sensitive_key in sensitive_keys):
+            if isinstance(value, str) and len(value) > 8:
+                masked_data[key] = value[:4] + '*' * (len(value) - 8) + value[-4:]
+            else:
+                masked_data[key] = '***masked***'
+        elif isinstance(value, dict):
+            masked_data[key] = mask_sensitive_data(value, sensitive_keys)
+        else:
+            masked_data[key] = value
+    
+    return masked_data
+
+
+def create_conversation_summary(messages: List[Dict[str, Any]], max_length: int = 100) -> str:
+    """
+    Create a summary of a conversation from messages
+    """
+    if not messages:
+        return "Empty conversation"
+    
+    # Get the first user message
+    first_user_message = None
+    for msg in messages:
+        if msg.get("role") == "user":
+            first_user_message = msg.get("content", "")
+            break
+    
+    if not first_user_message:
+        return "New conversation"
+    
+    # Clean and truncate
+    summary = clean_html(first_user_message)
+    summary = re.sub(r'\s+', ' ', summary).strip()
+    
+    return truncate_text(summary, max_length)
+
+
+def validate_model_parameters(temperature: float, max_tokens: int) -> Dict[str, Any]:
+    """
+    Validate AI model parameters
+    """
+    errors = []
+    
+    if not isinstance(temperature, (int, float)):
+        errors.append("Temperature must be a number")
+    elif not 0.0 <= temperature <= 2.0:
+        errors.append("Temperature must be between 0.0 and 2.0")
+    
+    if not isinstance(max_tokens, int):
+        errors.append("Max tokens must be an integer")
+    elif not 1 <= max_tokens <= 4000:
+        errors.append("Max tokens must be between 1 and 4000")
+    
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "normalized_temperature": max(0.0, min(2.0, float(temperature))) if isinstance(temperature, (int, float)) else 0.7,
+        "normalized_max_tokens": max(1, min(4000, int(max_tokens))) if isinstance(max_tokens, int) else 1000
+    }
+
+
+def get_system_info() -> Dict[str, Any]:
+    """
+    Get basic system information for health checks
+    """
+    return {
+        "service": "CodementorX Chatbot API",
+        "version": "1.0.0",
+        "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+        "timestamp": format_datetime(datetime.now(timezone.utc)),
+        "timezone": str(timezone.utc),
+        "environment": "development" if os.getenv("DEBUG", "False").lower() == "true" else "production"
+    }
